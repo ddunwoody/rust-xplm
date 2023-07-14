@@ -9,7 +9,7 @@ description = "High-level interfaces to the X-Plane plugin SDK"
 readme = "README.md"
 
 [dependencies]
-xplm-sys = "0.4.0"
+xplm-sys = { git = "https://github.com/ddunwoody/xplm-sys.git" }
 thiserror = "1.0.24"
 
 [profile.release]
