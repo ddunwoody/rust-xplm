@@ -150,12 +150,6 @@ impl OwnedCommandData {
         let name_c = CString::new(name)?;
         let description_c = CString::new(description)?;
 
-        let existing = unsafe { XPLMFindCommand(name_c.as_ptr()) };
-        if !existing.is_null() {
-            return Err(CommandCreateError::Exists);
-        }
-
-        // Command does not exist, proceed
         let command_id = unsafe { XPLMCreateCommand(name_c.as_ptr(), description_c.as_ptr()) };
         Ok(OwnedCommandData {
             id: command_id,
@@ -190,8 +184,4 @@ pub enum CommandCreateError {
     /// The provided Command name contained a null byte
     #[error("Null byte in Command name")]
     Null(#[from] NulError),
-
-    /// The Command exists already
-    #[error("Command exists already")]
-    Exists,
 }
