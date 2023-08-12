@@ -83,11 +83,11 @@ pub enum CommandFindError {
 /// Trait for things that can handle commands
 pub trait CommandHandler: 'static {
     /// Called when the command begins (corresponds to a button being pressed down)
-    fn command_begin(&mut self);
+    fn command_begin(&mut self) {}
     /// Called frequently while the command button is held down
-    fn command_continue(&mut self);
+    fn command_continue(&mut self) {}
     /// Called when the command ends (corresponds to a button being released)
-    fn command_end(&mut self);
+    fn command_end(&mut self) {}
 }
 
 /// A command created by this plugin that can be triggered by other components
