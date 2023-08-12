@@ -161,6 +161,27 @@ impl Menu {
             }
         }
     }
+
+    /// Adds this menu as a child of the aircraft menu
+    pub fn add_to_aircraft_menu(&self) {
+        let aircraft_menu = unsafe { xplm_sys::XPLMFindAircraftMenu() };
+        self.add_to_menu(aircraft_menu);
+    }
+    /// Removes this menu from the aircraft menu
+    pub fn remove_from_aircraft_menu(&self) {
+        let aircraft_menu = unsafe { xplm_sys::XPLMFindAircraftMenu() };
+        if let MenuState::InMenu {
+            id: _id,
+            parent,
+            index_in_parent,
+        } = self.state.get()
+        {
+            if parent == aircraft_menu {
+                self.remove_from_menu(aircraft_menu, index_in_parent);
+            }
+        }
+    }
+
 }
 
 /// Status that a menu can have
