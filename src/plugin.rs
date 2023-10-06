@@ -1,3 +1,5 @@
+use std::ffi::c_void;
+
 /// Accessing and communicating with other plugins
 pub mod management;
 
@@ -39,4 +41,8 @@ pub trait Plugin: Sized {
 
     /// Returns information on this plugin
     fn info(&self) -> PluginInfo;
+    
+    
+    /// Called when a message is received
+    fn receive_message(&mut self, _from: i32, _message: i32, _param: *mut c_void) {}
 }
