@@ -29,7 +29,7 @@ impl<T: DataType + ?Sized> DataRef<T, ReadOnly> {
 
         let dataref = unsafe { XPLMFindDataRef(name_c.as_ptr()) };
         if dataref.is_null() {
-            return Err(FindError::NotFound);
+            return Err(FindError::NotFound(String::from(name)));
         }
 
         let actual_type = unsafe { XPLMGetDataRefTypes(dataref) };
@@ -40,7 +40,7 @@ impl<T: DataType + ?Sized> DataRef<T, ReadOnly> {
                 access_phantom: PhantomData,
             })
         } else {
-            Err(FindError::WrongType)
+            Err(FindError::WrongType(String::from(name), expected_type, actual_type))
         }
     }
 
@@ -258,16 +258,16 @@ pub enum FindError {
     Null(#[from] NulError),
 
     /// The DataRef could not be found
-    #[error("DataRef not found")]
-    NotFound,
+    #[error("DataRef not found `{0}`")]
+    NotFound(String),
 
     /// The DataRef is not writable
     #[error("DataRef not writable")]
     NotWritable,
 
     /// The DataRef does not have the correct type
-    #[error("Incorrect DataRef type")]
-    WrongType,
+    #[error("Incorrect DataRef type `{0}` expected {1} != actual {2}")]
+    WrongType(String, i32, i32),
 }
 
 #[cfg(test)]
