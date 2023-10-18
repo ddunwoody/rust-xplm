@@ -90,6 +90,15 @@ pub trait CommandHandler: 'static {
     fn command_end(&mut self) {}
 }
 
+
+impl<F> CommandHandler for F
+where F: FnMut() + 'static
+{
+    fn command_begin(&mut self) {
+        self();
+    }
+}
+
 /// A command created by this plugin that can be triggered by other components
 pub struct OwnedCommand {
     /// The heap-allocated data
