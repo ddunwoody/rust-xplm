@@ -2,7 +2,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::*;
 use std::path::PathBuf;
 use std::ptr;
-use ::{debugln, xplm_sys};
+use ::{xplm_sys};
 
 /// Looks for a plugin with the provided signature and returns it if it exists
 pub fn plugin_with_signature(signature: &str) -> Option<Plugin> {
@@ -145,12 +145,9 @@ impl Plugin {
         }
     }
 
-    pub fn send_message<T: Into<Vec<u8>>>(&self, message: u32, param: T) {
-        match CString::new(param) {
-            Ok(param) => unsafe {
-                xplm_sys::XPLMSendMessageToPlugin(self.0, message as _, param.as_ptr() as _)
-            }
-            Err(_) => debugln!("[xplm] Unable to create CString from param")
+    pub fn send_message(&self, message: u32, param: *mut c_void) {
+        unsafe {
+            xplm_sys::XPLMSendMessageToPlugin(self.0, message as _, param)
         }
     }
 }
