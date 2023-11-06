@@ -55,12 +55,14 @@ where
             }
             Err(e) => {
                 debugln!("Plugin failed to start: {}", e);
+                eprintln!("Plugin failed to start: {}", e);
                 data.plugin = ptr::null_mut();
                 0
             }
         }
     }));
     unwind.unwrap_or_else(|_| {
+        debugln!("Panic in XPluginStart");
         eprintln!("Panic in XPluginStart");
         data.panicked = true;
         data.plugin = ptr::null_mut();
@@ -82,11 +84,13 @@ where
             drop(plugin);
         }));
         if unwind.is_err() {
+            debugln!("Panic in XPluginStop");
             eprintln!("Panic in XPluginStop");
             data.panicked = true;
         }
     } else {
         debugln!("Warning: A plugin that panicked cannot be stopped. It may leak resources.");
+        eprintln!("Warning: A plugin that panicked cannot be stopped. It may leak resources.");
     }
 }
 
@@ -102,10 +106,12 @@ where
             Ok(_) => 1,
             Err(e) => {
                 debugln!("Plugin failed to enable: {}", e);
+                eprintln!("Plugin failed to enable: {}", e);
                 0
             }
         }));
         unwind.unwrap_or_else(|_| {
+            debugln!("Panic in XPluginEnable");
             eprintln!("Panic in XPluginEnable");
             data.panicked = true;
             0
@@ -128,6 +134,7 @@ where
             (*data.plugin).disable();
         }));
         if unwind.is_err() {
+            debugln!("Panic in XPluginDisable");
             eprintln!("Panic in XPluginDisable");
             data.panicked = true;
         }
@@ -152,6 +159,7 @@ pub unsafe fn xplugin_receive_message<P>(
             (*data.plugin).receive_message(from, message, param);
         }));
         if unwind.is_err() {
+            debugln!("Panic in XPluginReceiveMessage");
             eprintln!("Panic in XPluginReceiveMessage");
             data.panicked = true;
         }
