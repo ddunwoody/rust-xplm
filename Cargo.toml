@@ -10,7 +10,7 @@ readme = "README.md"
 
 [dependencies]
 xplm-sys = { git = "https://github.com/ddunwoody/xplm-sys.git" }
-thiserror = "1.0.48"
+thiserror = "1.0.50"
 
 [profile.release]
 lto = true
