@@ -83,19 +83,22 @@ pub enum CommandFindError {
 /// Trait for things that can handle commands
 pub trait CommandHandler: 'static {
     /// Called when the command begins (corresponds to a button being pressed down)
-    fn command_begin(&mut self) {}
+    /// Return `false` to prevent X-Plane's processing of this command
+    fn command_begin(&mut self) -> bool { false }
     /// Called frequently while the command button is held down
-    fn command_continue(&mut self) {}
+    /// Return `false` to prevent X-Plane's processing of this command
+    fn command_continue(&mut self) -> bool  { false }
     /// Called when the command ends (corresponds to a button being released)
-    fn command_end(&mut self) {}
+    /// Return `false` to prevent X-Plane's processing of this command
+    fn command_end(&mut self) -> bool { false }
 }
 
 
 impl<F> CommandHandler for F
-where F: FnMut() + 'static
+where F: FnMut() -> bool + 'static
 {
-    fn command_begin(&mut self) {
-        self();
+    fn command_begin(&mut self) -> bool {
+        self()
     }
 }
 
@@ -177,14 +180,12 @@ unsafe extern "C" fn command_handler<H: CommandHandler>(
     let handler: *mut dyn CommandHandler = (*data).handler.deref_mut();
     let handler = handler as *mut H;
     if phase == xplm_CommandBegin as i32 {
-        (*handler).command_begin();
+        return (*handler).command_begin() as c_int;
     } else if phase == xplm_CommandContinue as i32 {
-        (*handler).command_continue();
-    } else if phase == xplm_CommandEnd as i32 {
-        (*handler).command_end();
+        return (*handler).command_continue() as c_int;
+    } else {
+        return (*handler).command_end() as c_int;
     }
-    // Prevent other components from handling this equivalent
-    0
 }
 
 /// Errors that can occur when creating a Command
