@@ -1,5 +1,9 @@
 # X-Plane plugin APIs for Rust
 
+# Note
+
+**This fork is no longer maintained**.  A maintained fork is [here](https://github.com/judemille/rust-xplane). 
+
 [![Crates.io Version](https://img.shields.io/crates/v/xplm.svg)](https://crates.io/crates/xplm)
 [![Documentation](https://docs.rs/xplm/badge.svg)](https://docs.rs/xplm)
 [![License](https://img.shields.io/crates/l/xplm.svg)](https://github.com/samcrow/rust-xplm#license)
