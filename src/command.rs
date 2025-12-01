@@ -51,6 +51,87 @@ impl Command {
             XPLMCommandEnd(self.id);
         }
     }
+
+    /// Registers a handler for this command. You must hold onto the returned
+    /// struct, since the handler will be unregistered when the returned
+    /// struct is dropped.
+    #[must_use]
+    pub fn register_handler<H: ForeignCommandHandler>(
+        &self,
+        before: bool,
+        handler: H,
+    ) -> ForeignCommandReg<H> {
+        let mut data = ForeignCommandReg {
+            id: self.id,
+            handler: Box::new(handler),
+            before,
+        };
+        unsafe {
+            let refcon: *mut H = data.handler.deref_mut();
+            XPLMRegisterCommandHandler(
+                data.id,
+                Some(foreign_command_handler::<H>),
+                data.before as c_int,
+                refcon as *mut c_void,
+            );
+        }
+        data
+    }
+}
+
+#[derive(Debug)]
+pub struct ForeignCommandReg<H: ForeignCommandHandler> {
+    id: XPLMCommandRef,
+    handler: Box<H>,
+    before: bool,
+}
+
+impl<H: ForeignCommandHandler> Drop for ForeignCommandReg<H> {
+    fn drop(&mut self) {
+        unsafe {
+            let arg: *mut H = self.handler.deref_mut();
+            XPLMUnregisterCommandHandler(
+                self.id,
+                Some(foreign_command_handler::<H>),
+                self.before as c_int,
+                arg as *mut c_void,
+            );
+        }
+    }
+}
+
+/// Trait for things that can handle commands
+pub trait ForeignCommandHandler: 'static {
+    /// Called when the command begins (corresponds to a button being
+    /// pressed down)
+    fn command_begin(&mut self) -> bool {
+        true
+    }
+    /// Called frequently while the command button is held down
+    fn command_continue(&mut self) -> bool {
+        true
+    }
+    /// Called when the command ends (corresponds to a button being released)
+    fn command_end(&mut self) -> bool {
+        true
+    }
+}
+
+/// Command handler callback
+unsafe extern "C" fn foreign_command_handler<H: ForeignCommandHandler>(
+    _ref: XPLMCommandRef,
+    phase: XPLMCommandPhase,
+    refcon: *mut c_void,
+) -> c_int {
+    assert!(!refcon.is_null());
+    let handler = refcon as *mut H;
+    if phase == xplm_CommandBegin as i32 {
+        (*handler).command_begin() as c_int
+    } else if phase == xplm_CommandContinue as i32 {
+        (*handler).command_continue() as c_int
+    } else {
+        (*handler).command_end() as c_int
+    }
 }
 
 /// An RAII lock that keeps a command held down
@@ -62,7 +143,7 @@ pub struct CommandHold<'a> {
     command: &'a mut Command,
 }
 
-impl<'a> Drop for CommandHold<'a> {
+impl Drop for CommandHold<'_> {
     fn drop(&mut self) {
         self.command.release();
     }
@@ -83,11 +164,11 @@ pub enum CommandFindError {
 /// Trait for things that can handle commands
 pub trait CommandHandler: 'static {
     /// Called when the command begins (corresponds to a button being pressed down)
-    fn command_begin(&mut self);
+    fn command_begin(&mut self) {}
     /// Called frequently while the command button is held down
-    fn command_continue(&mut self);
+    fn command_continue(&mut self) {}
     /// Called when the command ends (corresponds to a button being released)
-    fn command_end(&mut self);
+    fn command_end(&mut self) {}
 }
 
 /// A command created by this plugin that can be triggered by other components
