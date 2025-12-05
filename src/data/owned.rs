@@ -1,11 +1,19 @@
 use super::{Access, ArrayRead, ArrayReadWrite, DataRead, DataReadWrite, DataType, ReadOnly};
+use std::cell::OnceCell;
 use std::cmp;
-use std::ffi::{CString, NulError};
-use std::i32;
+use std::ffi::{CStr, CString, NulError};
 use std::marker::PhantomData;
 use std::os::raw::{c_int, c_void};
 use std::ptr;
+use std::sync::Mutex;
 use xplm_sys::*;
+
+const DRE_PLUGIN_SIGS: &[&CStr] = &[
+    c"com.leecbaker.datareftool",
+    c"xplanesdk.examples.DataRefEditor",
+];
+const DRE_MSG_ADD_DATAREF: i32 = 0x01000000;
+static DATAREF_EDITOR: Mutex<OnceCell<Option<XPLMPluginID>>> = Mutex::new(OnceCell::new());
 
 /// A dataref owned by this plugin
 ///
@@ -66,6 +74,32 @@ impl<T: DataType + ?Sized, A: Access> OwnedData<T, A> {
                 value_ptr as *mut c_void,
             )
         };
+
+        // Check if DataRefEditor is present. If it is, notify it of the
+        // new dataref.
+        if let Some(plugin_id) = DATAREF_EDITOR
+            .lock()
+            .expect("panicked lock")
+            .get_or_init(|| unsafe {
+                for sig in DRE_PLUGIN_SIGS {
+                    let plugin_id = XPLMFindPluginBySignature(sig.as_ptr());
+                    if plugin_id != XPLM_NO_PLUGIN_ID {
+                        return Some(plugin_id);
+                    }
+                }
+                None
+            })
+            .as_ref()
+            .copied()
+        {
+            unsafe {
+                XPLMSendMessageToPlugin(
+                    plugin_id,
+                    DRE_MSG_ADD_DATAREF,
+                    name_c.as_ptr() as *mut c_void,
+                );
+            }
+        }
 
         assert!(!id.is_null());
         Ok(OwnedData {
