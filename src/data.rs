@@ -45,6 +45,7 @@ pub trait DataReadWrite<T>: DataRead<T> {
 }
 
 /// Trait for readable array data accessors
+#[allow(clippy::len_without_is_empty)]
 pub trait ArrayRead<T: ArrayType + ?Sized> {
     /// Reads values
     ///
@@ -141,6 +142,9 @@ pub trait DataType {
     /// For basic types, this is usually Self. For [T] types, this is Vec<T>.
     #[doc(hidden)]
     type Storage: Sized;
+    /// The type used for validation.
+    #[doc(hidden)]
+    type Validation: Sized;
     /// Returns the X-Plane data type corresponding with this type
     #[doc(hidden)]
     fn sim_type() -> XPLMDataTypeID;
@@ -159,6 +163,7 @@ macro_rules! impl_type {
     ($native_type:ty as $sim_type:ident) => {
         impl DataType for $native_type {
             type Storage = Self;
+            type Validation = $native_type;
             fn sim_type() -> XPLMDataTypeID {
                 $sim_type as XPLMDataTypeID
             }
@@ -170,6 +175,7 @@ macro_rules! impl_type {
     ([$native_type:ty]: array as $sim_type:ident) => {
         impl DataType for [$native_type] {
             type Storage = Vec<$native_type>;
+            type Validation = $native_type;
             fn sim_type() -> XPLMDataTypeID {
                 $sim_type as XPLMDataTypeID
             }

@@ -1,4 +1,6 @@
-use super::{ArrayRead, ArrayReadWrite, DataRead, DataReadWrite, DataType, ReadOnly, ReadWrite};
+use super::{
+    ArrayRead, ArrayReadWrite, ArrayType, DataRead, DataReadWrite, DataType, ReadOnly, ReadWrite,
+};
 use std::ffi::{CString, NulError};
 use std::marker::PhantomData;
 use std::num::FpCategory;
@@ -142,8 +144,8 @@ macro_rules! dataref_type {
             }
         }
 
-        impl<V: DataValidator<$native_type>, A> ValidatedArrayRead<$native_type, V>
-            for ValidatedDataRef<[$native_type], V, A, $native_type>
+        impl<V: DataValidator<$native_type>, A> ValidatedArrayRead<[$native_type], V>
+            for ValidatedDataRef<[$native_type], V, A>
         {
             fn get(&self, dest: &mut [$native_type]) -> Result<usize, V::Error> {
                 let len = self.dr.get(dest);
@@ -162,8 +164,8 @@ macro_rules! dataref_type {
             }
         }
 
-        impl<V: DataValidator<$native_type>> ValidatedArrayReadWrite<$native_type, V>
-            for ValidatedDataRef<[$native_type], V, ReadWrite, $native_type>
+        impl<V: DataValidator<$native_type>> ValidatedArrayReadWrite<[$native_type], V>
+            for ValidatedDataRef<[$native_type], V, ReadWrite>
         {
             fn set(&mut self, values: &[$native_type]) -> Result<(), V::Error> {
                 if let Some(e) = values.iter().find_map(|value| V::validate(value).err()) {
@@ -316,36 +318,33 @@ pub enum FindError {
     WrongType,
 }
 
-pub struct ValidatedDataRef<T, V, A = ReadOnly, Vt = T>
+pub struct ValidatedDataRef<T, V, A = ReadOnly>
 where
     T: DataType + ?Sized,
-    V: DataValidator<Vt>,
+    V: DataValidator<T::Validation>,
 {
     dr: DataRef<T, A>,
     validator: PhantomData<V>,
-    validated_type: PhantomData<Vt>,
 }
 
-impl<T, V, Vt> ValidatedDataRef<T, V, ReadOnly, Vt>
+impl<T, V> ValidatedDataRef<T, V, ReadOnly>
 where
     T: DataType + ?Sized,
-    V: DataValidator<Vt>,
+    V: DataValidator<T::Validation>,
 {
     pub fn find<S: AsRef<str>>(name: S) -> Result<Self, FindError> {
         Ok(Self {
             dr: DataRef::find(name.as_ref())?,
             validator: PhantomData,
-            validated_type: PhantomData,
         })
     }
     /// Makes this dataref writable
     ///
     /// Returns an error if the dataref cannot be written.
-    pub fn writeable(self) -> Result<ValidatedDataRef<T, V, ReadWrite, Vt>, FindError> {
+    pub fn writeable(self) -> Result<ValidatedDataRef<T, V, ReadWrite>, FindError> {
         Ok(ValidatedDataRef {
             dr: self.dr.writeable()?,
             validator: PhantomData,
-            validated_type: PhantomData,
         })
     }
 }
@@ -368,18 +367,20 @@ where
 #[allow(clippy::len_without_is_empty)]
 pub trait ValidatedArrayRead<T, V>
 where
-    V: DataValidator<T>,
+    T: ArrayType + ?Sized,
+    V: DataValidator<T::Element>,
 {
-    fn get(&self, dest: &mut [T]) -> Result<usize, V::Error>;
+    fn get(&self, dest: &mut [T::Element]) -> Result<usize, V::Error>;
     fn len(&self) -> usize;
 }
 
 pub trait ValidatedArrayReadWrite<T, V>
 where
     Self: ValidatedArrayRead<T, V>,
-    V: DataValidator<T>,
+    T: ArrayType + ?Sized,
+    V: DataValidator<T::Element>,
 {
-    fn set(&mut self, values: &[T]) -> Result<(), V::Error>;
+    fn set(&mut self, values: &[T::Element]) -> Result<(), V::Error>;
 }
 
 pub trait DataValidator<T: ?Sized> {
