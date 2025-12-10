@@ -84,13 +84,24 @@ macro_rules! dataref_type {
                 unsafe { $write_fn(self.id, value as $sim_native_type) }
             }
         }
-        impl<V> ValidatedDataRead<$native_type, V> for ValidatedDataRef<$native_type, V>
+        impl<V, A> ValidatedDataRead<$native_type, V> for ValidatedDataRef<$native_type, V, A>
         where
             V: DataValidator<$native_type>,
         {
             fn get(&self) -> Result<$native_type, V::Error> {
                 let value = self.dr.get();
                 V::validate(&value).map(|_| value)
+            }
+        }
+        impl<V> ValidatedDataReadWrite<$native_type, V>
+            for ValidatedDataRef<$native_type, V, ReadWrite>
+        where
+            V: DataValidator<$native_type>,
+        {
+            fn set(&mut self, value: $native_type) -> Result<(), V::Error> {
+                V::validate(&value)?;
+                self.dr.set(value);
+                Ok(())
             }
         }
     };
@@ -348,6 +359,7 @@ where
 
 pub trait ValidatedDataReadWrite<T, V>
 where
+    Self: ValidatedDataRead<T, V>,
     V: DataValidator<T>,
 {
     fn set(&mut self, value: T) -> Result<(), V::Error>;
@@ -364,6 +376,7 @@ where
 
 pub trait ValidatedArrayReadWrite<T, V>
 where
+    Self: ValidatedArrayRead<T, V>,
     V: DataValidator<T>,
 {
     fn set(&mut self, values: &[T]) -> Result<(), V::Error>;
