@@ -351,15 +351,17 @@ where
 
 pub trait ValidatedDataRead<T, V>
 where
-    V: DataValidator<T>,
+    T: DataType,
+    V: DataValidator<T::Validation>,
 {
     fn get(&self) -> Result<T, V::Error>;
 }
 
 pub trait ValidatedDataReadWrite<T, V>
 where
+    T: DataType,
+    V: DataValidator<T::Validation>,
     Self: ValidatedDataRead<T, V>,
-    V: DataValidator<T>,
 {
     fn set(&mut self, value: T) -> Result<(), V::Error>;
 }
@@ -368,7 +370,7 @@ where
 pub trait ValidatedArrayRead<T, V>
 where
     T: ArrayType + ?Sized,
-    V: DataValidator<T::Element>,
+    V: DataValidator<T::Validation>,
 {
     fn get(&self, dest: &mut [T::Element]) -> Result<usize, V::Error>;
     fn len(&self) -> usize;
@@ -378,7 +380,7 @@ pub trait ValidatedArrayReadWrite<T, V>
 where
     Self: ValidatedArrayRead<T, V>,
     T: ArrayType + ?Sized,
-    V: DataValidator<T::Element>,
+    V: DataValidator<T::Validation>,
 {
     fn set(&mut self, values: &[T::Element]) -> Result<(), V::Error>;
 }
