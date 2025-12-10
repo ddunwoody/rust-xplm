@@ -353,6 +353,7 @@ where
     fn set(&mut self, value: T) -> Result<(), V::Error>;
 }
 
+#[allow(clippy::len_without_is_empty)]
 pub trait ValidatedArrayRead<T, V>
 where
     V: DataValidator<T>,
@@ -401,6 +402,22 @@ impl<T: num::Float> DataValidator<T> for NonNegativeFloat<T> {
     fn validate(data: &T) -> Result<(), Self::Error> {
         match data.classify() {
             FpCategory::Normal => (*data >= T::zero())
+                .then_some(())
+                .ok_or(FloatValidationError::Negative),
+            cat => Err(FloatValidationError::NotNormal(cat)),
+        }
+    }
+}
+
+pub struct PositiveFloat<T: num::Float> {
+    phantom: PhantomData<T>,
+}
+
+impl<T: num::Float> DataValidator<T> for PositiveFloat<T> {
+    type Error = FloatValidationError;
+    fn validate(data: &T) -> Result<(), Self::Error> {
+        match data.classify() {
+            FpCategory::Normal => (*data > T::zero())
                 .then_some(())
                 .ok_or(FloatValidationError::Negative),
             cat => Err(FloatValidationError::NotNormal(cat)),
