@@ -1,6 +1,7 @@
 use super::{ArrayRead, ArrayReadWrite, DataRead, DataReadWrite, DataType, ReadOnly, ReadWrite};
 use std::ffi::{CString, NulError};
 use std::marker::PhantomData;
+use std::num::FpCategory;
 use std::os::raw::c_void;
 use std::ptr;
 use xplm_sys::*;
@@ -83,6 +84,15 @@ macro_rules! dataref_type {
                 unsafe { $write_fn(self.id, value as $sim_native_type) }
             }
         }
+        impl<V> ValidatedDataRead<$native_type, V> for ValidatedDataRef<$native_type, V>
+        where
+            V: DataValidator<$native_type>,
+        {
+            fn get(&self) -> Result<$native_type, V::Error> {
+                let value = self.dr.get();
+                V::validate(&value).map(|_| value)
+            }
+        }
     };
     // Array case
     (
@@ -118,6 +128,35 @@ macro_rules! dataref_type {
                     // Cast to *mut because the API requires it
                     $write_fn(self.id, values.as_ptr() as *mut $sim_native_type, 0, size);
                 }
+            }
+        }
+
+        impl<V: DataValidator<$native_type>, A> ValidatedArrayRead<$native_type, V>
+            for ValidatedDataRef<[$native_type], V, A, $native_type>
+        {
+            fn get(&self, dest: &mut [$native_type]) -> Result<usize, V::Error> {
+                let len = self.dr.get(dest);
+                if let Some(e) = dest[..len]
+                    .iter()
+                    .find_map(|value| V::validate(value).err())
+                {
+                    // Destroy any bad data to avoid using it
+                    dest.iter_mut().for_each(|v| *v = <$native_type>::default());
+                    return Err(e);
+                }
+                Ok(len)
+            }
+        }
+
+        impl<V: DataValidator<$native_type>> ValidatedArrayReadWrite<$native_type, V>
+            for ValidatedDataRef<[$native_type], V, ReadWrite, $native_type>
+        {
+            fn set(&mut self, values: &[$native_type]) -> Result<(), V::Error> {
+                if let Some(e) = values.iter().find_map(|value| V::validate(value).err()) {
+                    return Err(e);
+                }
+                self.dr.set(values);
+                Ok(())
             }
         }
     };
@@ -187,14 +226,7 @@ dataref_type! {
         write XPLMSetDatad;
     }
 }
-dataref_type! {
-    dataref array type {
-        native [i32];
-        sim xplmType_IntArray as [i32];
-        read XPLMGetDatavi;
-        write XPLMSetDatavi;
-    }
-}
+
 dataref_type! {
     dataref array type {
         native [u32];
@@ -268,6 +300,108 @@ pub enum FindError {
     /// The DataRef does not have the correct type
     #[error("Incorrect DataRef type")]
     WrongType,
+}
+
+pub struct ValidatedDataRef<T, V, A = ReadOnly, Vt = T>
+where
+    T: DataType + ?Sized,
+    V: DataValidator<Vt>,
+{
+    dr: DataRef<T, A>,
+    validator: PhantomData<V>,
+    validated_type: PhantomData<Vt>,
+}
+
+impl<T, V, Vt> ValidatedDataRef<T, V, ReadOnly, Vt>
+where
+    T: DataType,
+    V: DataValidator<Vt>,
+{
+    pub fn find<S: AsRef<str>>(name: S) -> Result<Self, FindError> {
+        Ok(Self {
+            dr: DataRef::find(name.as_ref())?,
+            validator: PhantomData,
+            validated_type: PhantomData,
+        })
+    }
+    /// Makes this dataref writable
+    ///
+    /// Returns an error if the dataref cannot be written.
+    pub fn writeable(self) -> Result<ValidatedDataRef<T, V, ReadWrite, Vt>, FindError> {
+        Ok(ValidatedDataRef {
+            dr: self.dr.writeable()?,
+            validator: PhantomData,
+            validated_type: PhantomData,
+        })
+    }
+}
+
+pub trait ValidatedDataRead<T, V>
+where
+    V: DataValidator<T>,
+{
+    fn get(&self) -> Result<T, V::Error>;
+}
+
+pub trait ValidatedDataReadWrite<T, V>
+where
+    V: DataValidator<T>,
+{
+    fn set(&mut self, value: T) -> Result<(), V::Error>;
+}
+
+pub trait ValidatedArrayRead<T, V>
+where
+    V: DataValidator<T>,
+{
+    fn get(&self, dest: &mut [T]) -> Result<usize, V::Error>;
+}
+
+pub trait ValidatedArrayReadWrite<T, V>
+where
+    V: DataValidator<T>,
+{
+    fn set(&mut self, values: &[T]) -> Result<(), V::Error>;
+}
+
+pub trait DataValidator<T: ?Sized> {
+    type Error;
+    fn validate(_data: &T) -> Result<(), Self::Error>;
+}
+
+pub enum FloatValidationError {
+    NotNormal(FpCategory),
+    Negative,
+}
+
+pub struct NormalFloat<T: num::Float> {
+    phantom: PhantomData<T>,
+}
+
+impl<T: num::Float> DataValidator<T> for NormalFloat<T> {
+    type Error = FloatValidationError;
+    fn validate(data: &T) -> Result<(), Self::Error> {
+        match data.classify() {
+            FpCategory::Normal => Ok(()),
+            cat => Err(FloatValidationError::NotNormal(cat)),
+        }
+    }
+}
+
+pub struct NonNegativeFloat<T: num::Float> {
+    phantom: PhantomData<T>,
+}
+
+impl<T: num::Float> DataValidator<T> for NonNegativeFloat<T> {
+    type Error = FloatValidationError;
+    fn validate(data: &T) -> Result<(), Self::Error> {
+        match data.classify() {
+            FpCategory::Normal => (*data >= T::zero())
+                .then_some(())
+                .ok_or(FloatValidationError::Negative),
+            cat => Err(FloatValidationError::NotNormal(cat)),
+        }
+    }
 }
 
 #[cfg(test)]
