@@ -146,6 +146,9 @@ macro_rules! dataref_type {
                 }
                 Ok(len)
             }
+            fn len(&self) -> usize {
+                self.dr.len()
+            }
         }
 
         impl<V: DataValidator<$native_type>> ValidatedArrayReadWrite<$native_type, V>
@@ -355,6 +358,7 @@ where
     V: DataValidator<T>,
 {
     fn get(&self, dest: &mut [T]) -> Result<usize, V::Error>;
+    fn len(&self) -> usize;
 }
 
 pub trait ValidatedArrayReadWrite<T, V>
