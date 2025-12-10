@@ -314,7 +314,7 @@ where
 
 impl<T, V, Vt> ValidatedDataRef<T, V, ReadOnly, Vt>
 where
-    T: DataType,
+    T: DataType + ?Sized,
     V: DataValidator<Vt>,
 {
     pub fn find<S: AsRef<str>>(name: S) -> Result<Self, FindError> {
