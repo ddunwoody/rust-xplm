@@ -245,6 +245,14 @@ dataref_type! {
 
 dataref_type! {
     dataref array type {
+        native [i32];
+        sim xplmType_IntArray as [i32];
+        read XPLMGetDatavi;
+        write XPLMSetDatavi;
+    }
+}
+dataref_type! {
+    dataref array type {
         native [u32];
         sim xplmType_IntArray as [i32];
         read XPLMGetDatavi;
