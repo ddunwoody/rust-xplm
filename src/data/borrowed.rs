@@ -433,11 +433,9 @@ impl<T: num::Float> DataValidator<T> for NonNegativeFloat<T> {
     }
 }
 
-pub struct PositiveFloat<T: num::Float> {
-    phantom: PhantomData<T>,
-}
+pub struct Positive {}
 
-impl<T: num::Float> DataValidator<T> for PositiveFloat<T> {
+impl<T: num::Float> DataValidator<T> for Positive {
     type Error = FloatValidationError;
     fn validate(data: &T) -> Result<(), Self::Error> {
         match data.classify() {
