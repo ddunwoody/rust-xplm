@@ -479,11 +479,12 @@ pub mod validator {
     pub struct Range<const START: i64, const END: i64> {}
     impl<T, const START: i64, const END: i64> DataValidator<T> for Range<START, END>
     where
-        T: num::Num + PartialOrd + From<i64>,
+        T: num::Num + PartialOrd + TryFrom<i64>,
+        T::Error: std::fmt::Debug,
     {
         type Error = RangeValidationError;
         fn validate(data: &T) -> Result<(), Self::Error> {
-            (*data >= T::from(START) && *data < T::from(END))
+            (*data >= T::try_from(START).unwrap() && *data < T::try_from(END).unwrap())
                 .then_some(())
                 .ok_or(RangeValidationError::NotInRange)
         }
@@ -492,11 +493,12 @@ pub mod validator {
     pub struct RangeInclusive<const START: i64, const END: i64> {}
     impl<T, const START: i64, const END: i64> DataValidator<T> for RangeInclusive<START, END>
     where
-        T: num::Num + PartialOrd + From<i64>,
+        T: num::Num + PartialOrd + TryFrom<i64>,
+        T::Error: std::fmt::Debug,
     {
         type Error = RangeValidationError;
         fn validate(data: &T) -> Result<(), Self::Error> {
-            (*data >= T::from(START) && *data <= T::from(END))
+            (*data >= T::try_from(START).unwrap() && *data <= T::try_from(END).unwrap())
                 .then_some(())
                 .ok_or(RangeValidationError::NotInRange)
         }
