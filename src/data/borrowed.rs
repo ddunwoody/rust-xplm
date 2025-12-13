@@ -393,7 +393,6 @@ where
 }
 
 pub mod validator {
-    use std::marker::PhantomData;
     use std::num::FpCategory;
 
     pub trait DataValidator<T: ?Sized> {
@@ -408,11 +407,9 @@ pub mod validator {
     }
 
     #[derive(Copy, Clone, Debug)]
-    pub struct NormalFloat<T: num::Float> {
-        phantom: PhantomData<T>,
-    }
+    pub struct NormalFloat {}
 
-    impl<T: num::Float> DataValidator<T> for NormalFloat<T> {
+    impl<T: num::Float> DataValidator<T> for NormalFloat {
         type Error = FloatValidationError;
         fn validate(data: &T) -> Result<(), Self::Error> {
             match data.classify() {
