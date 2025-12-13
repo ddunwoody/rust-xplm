@@ -3,7 +3,6 @@ use super::{
 };
 use std::ffi::{CString, NulError};
 use std::marker::PhantomData;
-use std::num::FpCategory;
 use std::os::raw::c_void;
 use std::ptr;
 use xplm_sys::*;
@@ -88,7 +87,7 @@ macro_rules! dataref_type {
         }
         impl<V, A> ValidatedDataRead<$native_type, V> for ValidatedDataRef<$native_type, V, A>
         where
-            V: DataValidator<$native_type>,
+            V: validator::DataValidator<$native_type>,
         {
             fn get(&self) -> Result<$native_type, V::Error> {
                 let value = self.dr.get();
@@ -98,7 +97,7 @@ macro_rules! dataref_type {
         impl<V> ValidatedDataReadWrite<$native_type, V>
             for ValidatedDataRef<$native_type, V, ReadWrite>
         where
-            V: DataValidator<$native_type>,
+            V: validator::DataValidator<$native_type>,
         {
             fn set(&mut self, value: $native_type) -> Result<(), V::Error> {
                 V::validate(&value)?;
@@ -144,7 +143,7 @@ macro_rules! dataref_type {
             }
         }
 
-        impl<V: DataValidator<$native_type>, A> ValidatedArrayRead<[$native_type], V>
+        impl<V: validator::DataValidator<$native_type>, A> ValidatedArrayRead<[$native_type], V>
             for ValidatedDataRef<[$native_type], V, A>
         {
             fn get(&self, dest: &mut [$native_type]) -> Result<usize, V::Error> {
@@ -164,7 +163,7 @@ macro_rules! dataref_type {
             }
         }
 
-        impl<V: DataValidator<$native_type>> ValidatedArrayReadWrite<[$native_type], V>
+        impl<V: validator::DataValidator<$native_type>> ValidatedArrayReadWrite<[$native_type], V>
             for ValidatedDataRef<[$native_type], V, ReadWrite>
         {
             fn set(&mut self, values: &[$native_type]) -> Result<(), V::Error> {
@@ -329,7 +328,7 @@ pub enum FindError {
 pub struct ValidatedDataRef<T, V, A = ReadOnly>
 where
     T: DataType + ?Sized,
-    V: DataValidator<T::Validation>,
+    V: validator::DataValidator<T::Validation>,
 {
     dr: DataRef<T, A>,
     validator: PhantomData<V>,
@@ -338,7 +337,7 @@ where
 impl<T, V> ValidatedDataRef<T, V, ReadOnly>
 where
     T: DataType + ?Sized,
-    V: DataValidator<T::Validation>,
+    V: validator::DataValidator<T::Validation>,
 {
     pub fn find<S: AsRef<str>>(name: S) -> Result<Self, FindError> {
         Ok(Self {
@@ -360,7 +359,7 @@ where
 pub trait ValidatedDataRead<T, V>
 where
     T: DataType,
-    V: DataValidator<T::Validation>,
+    V: validator::DataValidator<T::Validation>,
 {
     fn get(&self) -> Result<T, V::Error>;
 }
@@ -368,7 +367,7 @@ where
 pub trait ValidatedDataReadWrite<T, V>
 where
     T: DataType,
-    V: DataValidator<T::Validation>,
+    V: validator::DataValidator<T::Validation>,
     Self: ValidatedDataRead<T, V>,
 {
     fn set(&mut self, value: T) -> Result<(), V::Error>;
@@ -378,7 +377,7 @@ where
 pub trait ValidatedArrayRead<T, V>
 where
     T: ArrayType + ?Sized,
-    V: DataValidator<T::Validation>,
+    V: validator::DataValidator<T::Validation>,
 {
     fn get(&self, dest: &mut [T::Element]) -> Result<usize, V::Error>;
     fn len(&self) -> usize;
@@ -388,61 +387,121 @@ pub trait ValidatedArrayReadWrite<T, V>
 where
     Self: ValidatedArrayRead<T, V>,
     T: ArrayType + ?Sized,
-    V: DataValidator<T::Validation>,
+    V: validator::DataValidator<T::Validation>,
 {
     fn set(&mut self, values: &[T::Element]) -> Result<(), V::Error>;
 }
 
-pub trait DataValidator<T: ?Sized> {
-    type Error;
-    fn validate(_data: &T) -> Result<(), Self::Error>;
-}
+pub mod validator {
+    use std::marker::PhantomData;
+    use std::num::FpCategory;
 
-pub enum FloatValidationError {
-    NotNormal(FpCategory),
-    Negative,
-}
+    pub trait DataValidator<T: ?Sized> {
+        type Error;
+        fn validate(_data: &T) -> Result<(), Self::Error>;
+    }
 
-pub struct NormalFloat<T: num::Float> {
-    phantom: PhantomData<T>,
-}
+    #[derive(Copy, Clone, Debug)]
+    pub enum FloatValidationError {
+        NotNormal(FpCategory),
+        NotInRange,
+    }
 
-impl<T: num::Float> DataValidator<T> for NormalFloat<T> {
-    type Error = FloatValidationError;
-    fn validate(data: &T) -> Result<(), Self::Error> {
-        match data.classify() {
-            FpCategory::Normal => Ok(()),
-            cat => Err(FloatValidationError::NotNormal(cat)),
+    #[derive(Copy, Clone, Debug)]
+    pub struct NormalFloat<T: num::Float> {
+        phantom: PhantomData<T>,
+    }
+
+    impl<T: num::Float> DataValidator<T> for NormalFloat<T> {
+        type Error = FloatValidationError;
+        fn validate(data: &T) -> Result<(), Self::Error> {
+            match data.classify() {
+                FpCategory::Normal => Ok(()),
+                cat => Err(FloatValidationError::NotNormal(cat)),
+            }
         }
     }
-}
 
-pub struct NonNegativeFloat<T: num::Float> {
-    phantom: PhantomData<T>,
-}
-
-impl<T: num::Float> DataValidator<T> for NonNegativeFloat<T> {
-    type Error = FloatValidationError;
-    fn validate(data: &T) -> Result<(), Self::Error> {
-        match data.classify() {
-            FpCategory::Normal => (*data >= T::zero())
-                .then_some(())
-                .ok_or(FloatValidationError::Negative),
-            cat => Err(FloatValidationError::NotNormal(cat)),
+    #[derive(Copy, Clone, Debug)]
+    pub struct NonNegativeFloat {}
+    impl<T: num::Float> DataValidator<T> for NonNegativeFloat {
+        type Error = FloatValidationError;
+        fn validate(data: &T) -> Result<(), Self::Error> {
+            match data.classify() {
+                FpCategory::Normal => (*data >= T::zero())
+                    .then_some(())
+                    .ok_or(FloatValidationError::NotInRange),
+                cat => Err(FloatValidationError::NotNormal(cat)),
+            }
         }
     }
-}
 
-pub struct Positive {}
+    #[derive(Copy, Clone, Debug)]
+    pub struct PositiveFloat {}
+    impl<T: num::Float> DataValidator<T> for PositiveFloat {
+        type Error = FloatValidationError;
+        fn validate(data: &T) -> Result<(), Self::Error> {
+            match data.classify() {
+                FpCategory::Normal => (*data > T::zero())
+                    .then_some(())
+                    .ok_or(FloatValidationError::NotInRange),
+                cat => Err(FloatValidationError::NotNormal(cat)),
+            }
+        }
+    }
 
-impl<T: num::Float> DataValidator<T> for Positive {
-    type Error = FloatValidationError;
-    fn validate(data: &T) -> Result<(), Self::Error> {
-        match data.classify() {
-            FpCategory::Normal => (*data > T::zero())
+    #[derive(Copy, Clone, Debug)]
+    pub enum RangeValidationError {
+        NotInRange,
+    }
+
+    #[derive(Copy, Clone, Debug)]
+    pub struct NonNegativeInt {}
+    impl<T: num::Integer> DataValidator<T> for NonNegativeInt {
+        type Error = RangeValidationError;
+        fn validate(data: &T) -> Result<(), Self::Error> {
+            (*data >= T::zero())
                 .then_some(())
-                .ok_or(FloatValidationError::Negative),
-            cat => Err(FloatValidationError::NotNormal(cat)),
+                .ok_or(RangeValidationError::NotInRange)
+        }
+    }
+
+    #[derive(Copy, Clone, Debug)]
+    pub struct PositiveInt {}
+    impl<T: num::Integer> DataValidator<T> for PositiveInt {
+        type Error = RangeValidationError;
+        fn validate(data: &T) -> Result<(), Self::Error> {
+            (*data > T::zero())
+                .then_some(())
+                .ok_or(RangeValidationError::NotInRange)
+        }
+    }
+
+    /// Half-open (0..1)
+    #[derive(Copy, Clone, Debug)]
+    pub struct Range<const START: i64, const END: i64> {}
+    impl<T, const START: i64, const END: i64> DataValidator<T> for Range<START, END>
+    where
+        T: num::Num + PartialOrd + From<i64>,
+    {
+        type Error = RangeValidationError;
+        fn validate(data: &T) -> Result<(), Self::Error> {
+            (*data >= T::from(START) && *data < T::from(END))
+                .then_some(())
+                .ok_or(RangeValidationError::NotInRange)
+        }
+    }
+    #[derive(Copy, Clone, Debug)]
+    pub struct RangeInclusive<const START: i64, const END: i64> {}
+    impl<T, const START: i64, const END: i64> DataValidator<T> for RangeInclusive<START, END>
+    where
+        T: num::Num + PartialOrd + From<i64>,
+    {
+        type Error = RangeValidationError;
+        fn validate(data: &T) -> Result<(), Self::Error> {
+            (*data >= T::from(START) && *data <= T::from(END))
+                .then_some(())
+                .ok_or(RangeValidationError::NotInRange)
         }
     }
 }
