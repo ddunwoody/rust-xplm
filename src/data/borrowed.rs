@@ -63,6 +63,148 @@ impl<T: DataType + ?Sized> DataRef<T, ReadOnly> {
     }
 }
 
+/// A dataref that first validates all input and output data before passing it on.
+/// This can be used to avoid attempting to write junk into the dataref system, or
+/// consuming junk written by somebody else.
+///
+/// This works the same as a normal DataRef struct, except the second generic
+/// argument must be a struct which implements the `DataValidator` trait. See
+/// `crate::data::validator` for a list of ready-to-use data validators.
+pub struct ValidatedDataRef<T, V, A = ReadOnly>
+where
+    T: DataType + ?Sized,
+    V: super::validator::DataValidator<T::Validation>,
+{
+    dr: DataRef<T, A>,
+    validator: PhantomData<V>,
+}
+
+impl<T, V> ValidatedDataRef<T, V, ReadOnly>
+where
+    T: DataType + ?Sized,
+    V: super::validator::DataValidator<T::Validation>,
+{
+    pub fn find<S: AsRef<str>>(name: S) -> Result<Self, FindError> {
+        Ok(Self {
+            dr: DataRef::find(name.as_ref())?,
+            validator: PhantomData,
+        })
+    }
+    /// Makes this dataref writable
+    ///
+    /// Returns an error if the dataref cannot be written.
+    pub fn writeable(self) -> Result<ValidatedDataRef<T, V, ReadWrite>, FindError> {
+        Ok(ValidatedDataRef {
+            dr: self.dr.writeable()?,
+            validator: PhantomData,
+        })
+    }
+}
+
+pub trait ValidatedDataRead<T, V>
+where
+    T: DataType,
+    V: super::validator::DataValidator<T::Validation>,
+{
+    fn get(&self) -> Result<T, V::Error>;
+}
+
+pub trait ValidatedDataReadWrite<T, V>
+where
+    T: DataType,
+    V: super::validator::DataValidator<T::Validation>,
+    Self: ValidatedDataRead<T, V>,
+{
+    fn set(&mut self, value: T) -> Result<(), V::Error>;
+}
+
+#[allow(clippy::len_without_is_empty)]
+pub trait ValidatedArrayRead<T, V>
+where
+    T: ArrayType + ?Sized,
+    V: super::validator::DataValidator<T::Validation>,
+{
+    fn get(&self, dest: &mut [T::Element]) -> Result<usize, V::Error>;
+    fn len(&self) -> usize;
+}
+
+pub trait ValidatedArrayReadWrite<T, V>
+where
+    Self: ValidatedArrayRead<T, V>,
+    T: ArrayType + ?Sized,
+    V: super::validator::DataValidator<T::Validation>,
+{
+    fn set(&mut self, values: &[T::Element]) -> Result<(), V::Error>;
+}
+
+pub struct TypedDataRef<X, R, A = ReadOnly>
+where
+    X: DataType + ?Sized,
+{
+    dr: DataRef<X, A>,
+    rust_type: PhantomData<R>,
+}
+
+impl<X, R> TypedDataRef<X, R, ReadOnly>
+where
+    X: DataType + ?Sized,
+    R: TryFrom<X::Storage>,
+{
+    pub fn find<S: AsRef<str>>(name: S) -> Result<Self, FindError> {
+        Ok(Self {
+            dr: DataRef::find(name.as_ref())?,
+            rust_type: PhantomData,
+        })
+    }
+}
+
+impl<X, R> TypedDataRef<X, R, ReadOnly>
+where
+    X: DataType + ?Sized,
+    X::Storage: From<R>,
+{
+    /// Makes this dataref writable
+    ///
+    /// Returns an error if the dataref cannot be written.
+    pub fn writeable(self) -> Result<TypedDataRef<X, R, ReadWrite>, FindError> {
+        Ok(TypedDataRef {
+            dr: self.dr.writeable()?,
+            rust_type: PhantomData,
+        })
+    }
+}
+
+pub trait TypedDataRead<X, R>
+where
+    X: DataType,
+    R: TryFrom<X>,
+{
+    fn get(&self) -> Result<R, R::Error>;
+}
+
+pub trait TypedArrayRead<X, R>
+where
+    X: ArrayType + ?Sized,
+    R: TryFrom<X::Element>,
+{
+    fn get(&self) -> Result<Vec<R>, R::Error>;
+}
+
+pub trait TypedDataReadWrite<X, R>
+where
+    X: DataType + From<R>,
+{
+    fn set(&mut self, value: R);
+}
+
+pub trait TypedArrayReadWrite<X, R>
+where
+    X: ArrayType + ?Sized,
+    X::Element: From<R>,
+{
+    fn set(&mut self, values: impl Iterator<Item = R>);
+}
+
 /// Creates a DataType implementation, DataRef::get() and DataRef::set() for a type
 macro_rules! dataref_type {
     // Basic case
@@ -87,7 +229,7 @@ macro_rules! dataref_type {
         }
         impl<V, A> ValidatedDataRead<$native_type, V> for ValidatedDataRef<$native_type, V, A>
         where
-            V: validator::DataValidator<$native_type>,
+            V: super::validator::DataValidator<$native_type>,
         {
             fn get(&self) -> Result<$native_type, V::Error> {
                 let value = self.dr.get();
@@ -97,12 +239,29 @@ macro_rules! dataref_type {
         impl<V> ValidatedDataReadWrite<$native_type, V>
             for ValidatedDataRef<$native_type, V, ReadWrite>
         where
-            V: validator::DataValidator<$native_type>,
+            V: super::validator::DataValidator<$native_type>,
         {
             fn set(&mut self, value: $native_type) -> Result<(), V::Error> {
                 V::validate(&value)?;
                 self.dr.set(value);
                 Ok(())
+            }
+        }
+
+        impl<A, R> TypedDataRead<$native_type, R> for TypedDataRef<$native_type, R, A>
+        where
+            R: TryFrom<$native_type>,
+        {
+            fn get(&self) -> Result<R, R::Error> {
+                R::try_from(self.dr.get())
+            }
+        }
+        impl<R> TypedDataReadWrite<$native_type, R> for TypedDataRef<$native_type, R, ReadWrite>
+        where
+            $native_type: From<R>,
+        {
+            fn set(&mut self, value: R) {
+                self.dr.set(<$native_type>::from(value));
             }
         }
     };
@@ -143,8 +302,9 @@ macro_rules! dataref_type {
             }
         }
 
-        impl<V: validator::DataValidator<$native_type>, A> ValidatedArrayRead<[$native_type], V>
-            for ValidatedDataRef<[$native_type], V, A>
+        impl<V, A> ValidatedArrayRead<[$native_type], V> for ValidatedDataRef<[$native_type], V, A>
+        where
+            V: super::validator::DataValidator<$native_type>,
         {
             fn get(&self, dest: &mut [$native_type]) -> Result<usize, V::Error> {
                 let len = self.dr.get(dest);
@@ -163,8 +323,10 @@ macro_rules! dataref_type {
             }
         }
 
-        impl<V: validator::DataValidator<$native_type>> ValidatedArrayReadWrite<[$native_type], V>
+        impl<V> ValidatedArrayReadWrite<[$native_type], V>
             for ValidatedDataRef<[$native_type], V, ReadWrite>
+        where
+            V: super::validator::DataValidator<$native_type>,
         {
             fn set(&mut self, values: &[$native_type]) -> Result<(), V::Error> {
                 if let Some(e) = values.iter().find_map(|value| V::validate(value).err()) {
@@ -172,6 +334,32 @@ macro_rules! dataref_type {
                 }
                 self.dr.set(values);
                 Ok(())
+            }
+        }
+
+        impl<R> TypedArrayRead<[$native_type], R> for TypedDataRef<[$native_type], R>
+        where
+            R: TryFrom<$native_type>,
+        {
+            fn get(&self) -> Result<Vec<R>, R::Error> {
+                self.dr
+                    .as_vec()
+                    .into_iter()
+                    .map(|item| R::try_from(item))
+                    .collect()
+            }
+        }
+
+        impl<R> TypedArrayReadWrite<[$native_type], R>
+            for TypedDataRef<[$native_type], R, ReadWrite>
+        where
+            $native_type: From<R>,
+        {
+            fn set(&mut self, values: impl Iterator<Item = R>) {
+                let values = values
+                    .map(|value| <$native_type>::from(value))
+                    .collect::<Vec<_>>();
+                self.dr.set(&values);
             }
         }
     };
@@ -323,184 +511,6 @@ pub enum FindError {
     /// The DataRef does not have the correct type
     #[error("Incorrect DataRef type")]
     WrongType,
-}
-
-pub struct ValidatedDataRef<T, V, A = ReadOnly>
-where
-    T: DataType + ?Sized,
-    V: validator::DataValidator<T::Validation>,
-{
-    dr: DataRef<T, A>,
-    validator: PhantomData<V>,
-}
-
-impl<T, V> ValidatedDataRef<T, V, ReadOnly>
-where
-    T: DataType + ?Sized,
-    V: validator::DataValidator<T::Validation>,
-{
-    pub fn find<S: AsRef<str>>(name: S) -> Result<Self, FindError> {
-        Ok(Self {
-            dr: DataRef::find(name.as_ref())?,
-            validator: PhantomData,
-        })
-    }
-    /// Makes this dataref writable
-    ///
-    /// Returns an error if the dataref cannot be written.
-    pub fn writeable(self) -> Result<ValidatedDataRef<T, V, ReadWrite>, FindError> {
-        Ok(ValidatedDataRef {
-            dr: self.dr.writeable()?,
-            validator: PhantomData,
-        })
-    }
-}
-
-pub trait ValidatedDataRead<T, V>
-where
-    T: DataType,
-    V: validator::DataValidator<T::Validation>,
-{
-    fn get(&self) -> Result<T, V::Error>;
-}
-
-pub trait ValidatedDataReadWrite<T, V>
-where
-    T: DataType,
-    V: validator::DataValidator<T::Validation>,
-    Self: ValidatedDataRead<T, V>,
-{
-    fn set(&mut self, value: T) -> Result<(), V::Error>;
-}
-
-#[allow(clippy::len_without_is_empty)]
-pub trait ValidatedArrayRead<T, V>
-where
-    T: ArrayType + ?Sized,
-    V: validator::DataValidator<T::Validation>,
-{
-    fn get(&self, dest: &mut [T::Element]) -> Result<usize, V::Error>;
-    fn len(&self) -> usize;
-}
-
-pub trait ValidatedArrayReadWrite<T, V>
-where
-    Self: ValidatedArrayRead<T, V>,
-    T: ArrayType + ?Sized,
-    V: validator::DataValidator<T::Validation>,
-{
-    fn set(&mut self, values: &[T::Element]) -> Result<(), V::Error>;
-}
-
-pub mod validator {
-    use std::num::FpCategory;
-
-    pub trait DataValidator<T: ?Sized> {
-        type Error;
-        fn validate(_data: &T) -> Result<(), Self::Error>;
-    }
-
-    #[derive(Copy, Clone, Debug)]
-    pub enum FloatValidationError {
-        NotNormal(FpCategory),
-        NotInRange,
-    }
-
-    #[derive(Copy, Clone, Debug)]
-    pub struct NormalFloat {}
-
-    impl<T: num::Float> DataValidator<T> for NormalFloat {
-        type Error = FloatValidationError;
-        fn validate(data: &T) -> Result<(), Self::Error> {
-            match data.classify() {
-                FpCategory::Normal => Ok(()),
-                cat => Err(FloatValidationError::NotNormal(cat)),
-            }
-        }
-    }
-
-    #[derive(Copy, Clone, Debug)]
-    pub struct NonNegativeFloat {}
-    impl<T: num::Float> DataValidator<T> for NonNegativeFloat {
-        type Error = FloatValidationError;
-        fn validate(data: &T) -> Result<(), Self::Error> {
-            match data.classify() {
-                FpCategory::Normal => (*data >= T::zero())
-                    .then_some(())
-                    .ok_or(FloatValidationError::NotInRange),
-                cat => Err(FloatValidationError::NotNormal(cat)),
-            }
-        }
-    }
-
-    #[derive(Copy, Clone, Debug)]
-    pub struct PositiveFloat {}
-    impl<T: num::Float> DataValidator<T> for PositiveFloat {
-        type Error = FloatValidationError;
-        fn validate(data: &T) -> Result<(), Self::Error> {
-            match data.classify() {
-                FpCategory::Normal => (*data > T::zero())
-                    .then_some(())
-                    .ok_or(FloatValidationError::NotInRange),
-                cat => Err(FloatValidationError::NotNormal(cat)),
-            }
-        }
-    }
-
-    #[derive(Copy, Clone, Debug)]
-    pub enum RangeValidationError {
-        NotInRange,
-    }
-
-    #[derive(Copy, Clone, Debug)]
-    pub struct NonNegativeInt {}
-    impl<T: num::Integer> DataValidator<T> for NonNegativeInt {
-        type Error = RangeValidationError;
-        fn validate(data: &T) -> Result<(), Self::Error> {
-            (*data >= T::zero())
-                .then_some(())
-                .ok_or(RangeValidationError::NotInRange)
-        }
-    }
-
-    #[derive(Copy, Clone, Debug)]
-    pub struct PositiveInt {}
-    impl<T: num::Integer> DataValidator<T> for PositiveInt {
-        type Error = RangeValidationError;
-        fn validate(data: &T) -> Result<(), Self::Error> {
-            (*data > T::zero())
-                .then_some(())
-                .ok_or(RangeValidationError::NotInRange)
-        }
-    }
-
-    /// Half-open (0..1)
-    #[derive(Copy, Clone, Debug)]
-    pub struct Range<const START: i64, const END: i64> {}
-    impl<T, const START: i64, const END: i64> DataValidator<T> for Range<START, END>
-    where
-        T: num::Num + PartialOrd + num::FromPrimitive,
-    {
-        type Error = RangeValidationError;
-        fn validate(data: &T) -> Result<(), Self::Error> {
-            (*data >= T::from_i64(START).unwrap() && *data < T::from_i64(END).unwrap())
-                .then_some(())
-                .ok_or(RangeValidationError::NotInRange)
-        }
-    }
-    #[derive(Copy, Clone, Debug)]
-    pub struct RangeInclusive<const START: i64, const END: i64> {}
-    impl<T, const START: i64, const END: i64> DataValidator<T> for RangeInclusive<START, END>
-    where
-        T: num::Num + PartialOrd + num::FromPrimitive,
-    {
-        type Error = RangeValidationError;
-        fn validate(data: &T) -> Result<(), Self::Error> {
-            (*data >= T::from_i64(START).unwrap() && *data <= T::from_i64(END).unwrap())
-                .then_some(())
-                .ok_or(RangeValidationError::NotInRange)
-        }
-    }
 }
 
 #[cfg(test)]
