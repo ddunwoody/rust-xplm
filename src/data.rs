@@ -58,7 +58,11 @@ pub trait ArrayRead<T: ArrayType + ?Sized> {
     /// The maximum number of values in an array dataref is i32::MAX.
     ///
     /// This function returns the number of values that were read.
+    #[must_use]
     fn get(&self, dest: &mut [T::Element]) -> usize;
+
+    #[must_use]
+    fn get_subdata(&self, dest: &mut [T::Element], start_offset: usize) -> usize;
 
     /// Returns the length of the data array
     fn len(&self) -> usize;
@@ -69,7 +73,32 @@ pub trait ArrayRead<T: ArrayType + ?Sized> {
         T::Element: Default + Clone,
     {
         let mut values = vec![T::Element::default(); self.len()];
-        self.get(&mut values);
+        let act_len = self.get(&mut values);
+        values.truncate(act_len);
+        values
+    }
+
+    /// Same as `as_vec()`, but allows you to specify a range of subdata to
+    /// request from the accessor. The returned vector might be shorter than
+    /// the request if the specified range exceeds the length of the dataref.
+    fn as_vec_subdata(&self, range: impl std::ops::RangeBounds<usize>) -> Vec<T::Element>
+    where
+        T::Element: Default + Clone,
+    {
+        let start = match range.start_bound() {
+            std::ops::Bound::Included(start) => *start,
+            std::ops::Bound::Excluded(start) => *start + 1,
+            std::ops::Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            std::ops::Bound::Included(end) => *end + 1,
+            std::ops::Bound::Excluded(end) => *end,
+            std::ops::Bound::Unbounded => self.len(),
+        };
+        let req_len = end - start;
+        let mut values = vec![T::Element::default(); req_len];
+        let act_len = self.get_subdata(&mut values, start);
+        values.truncate(act_len);
         values
     }
 }
@@ -84,6 +113,8 @@ pub trait ArrayReadWrite<T: ArrayType + ?Sized>: ArrayRead<T> {
     /// If the dataref is smaller than the provided slice, the values beyond the dataref bounds
     /// will be ignored.
     fn set(&mut self, values: &[T::Element]);
+
+    fn set_subdata(&mut self, values: &[T::Element], offset: usize);
 }
 
 /// Trait for data accessors that can be read as strings
@@ -113,14 +144,16 @@ where
 {
     fn get_to_string(&self, out: &mut String) -> Result<(), FromUtf8Error> {
         let mut buffer = StringBuffer::new(self.len());
-        self.get(buffer.as_bytes_mut());
+        let act_len = self.get(buffer.as_bytes_mut());
+        buffer.truncate(act_len);
         let value_string = buffer.into_string()?;
         out.push_str(&value_string);
         Ok(())
     }
     fn get_as_string(&self) -> Result<String, FromUtf8Error> {
         let mut buffer = StringBuffer::new(self.len());
-        self.get(buffer.as_bytes_mut());
+        let act_len = self.get(buffer.as_bytes_mut());
+        buffer.truncate(act_len);
         buffer.into_string()
     }
 }
@@ -157,6 +190,76 @@ pub trait DataType {
 pub trait ArrayType: DataType {
     /// The type of the array element
     type Element;
+}
+
+pub trait ValidatedDataRead<T, V>
+where
+    T: DataType,
+    V: validator::Validator<T::Validation>,
+{
+    fn get(&self) -> Result<T, V::Error>;
+}
+
+pub trait ValidatedDataReadWrite<T, V>
+where
+    T: DataType,
+    V: validator::Validator<T::Validation>,
+    Self: ValidatedDataRead<T, V>,
+{
+    fn set(&mut self, value: T) -> Result<(), V::Error>;
+}
+
+#[allow(clippy::len_without_is_empty)]
+pub trait ValidatedArrayRead<T, V>
+where
+    T: ArrayType + ?Sized,
+    V: validator::Validator<T::Validation>,
+{
+    fn get(&self, dest: &mut [T::Element]) -> Result<usize, V::Error>;
+    fn len(&self) -> usize;
+}
+
+pub trait ValidatedArrayReadWrite<T, V>
+where
+    Self: ValidatedArrayRead<T, V>,
+    T: ArrayType + ?Sized,
+    V: validator::Validator<T::Validation>,
+{
+    fn set(&mut self, values: &[T::Element]) -> Result<(), V::Error>;
+}
+
+pub trait TypedDataRead<X, R>
+where
+    X: DataType,
+    R: TryFrom<X::Storage>,
+{
+    fn get(&self) -> Result<R, R::Error>;
+}
+
+pub trait TypedArrayRead<X, R>
+where
+    X: ArrayType + ?Sized,
+    R: TryFrom<X::Element>,
+{
+    fn get(&self) -> Result<Vec<R>, R::Error>;
+    fn get_subdata(&self, range: impl std::ops::RangeBounds<usize>) -> Result<Vec<R>, R::Error>;
+}
+
+pub trait TypedDataReadWrite<X, R>
+where
+    X: DataType,
+    R: Into<X::Storage>,
+{
+    fn set(&mut self, value: R);
+}
+
+pub trait TypedArrayReadWrite<X, R>
+where
+    X: ArrayType + ?Sized,
+    R: Into<X::Element>,
+{
+    fn set(&mut self, values: impl Iterator<Item = R>);
+    fn set_subdata(&mut self, values: impl Iterator<Item = R>, offset: usize);
 }
 
 macro_rules! impl_type {
@@ -204,6 +307,54 @@ impl_type!([f32]: array as xplmType_FloatArray);
 impl_type!([u8]: array as xplmType_Data);
 impl_type!([i8]: array as xplmType_Data);
 
+pub mod range {
+    use std::fmt;
+
+    #[derive(Clone, Hash, PartialEq, Eq)]
+    pub struct RangeExclusive<T> {
+        pub start: T,
+        pub end: T,
+    }
+    impl<T> std::ops::RangeBounds<T> for RangeExclusive<T> {
+        fn start_bound(&self) -> std::ops::Bound<&T> {
+            std::ops::Bound::Excluded(&self.start)
+        }
+        fn end_bound(&self) -> std::ops::Bound<&T> {
+            std::ops::Bound::Excluded(&self.end)
+        }
+    }
+    impl<Idx: fmt::Debug> fmt::Debug for RangeExclusive<Idx> {
+        fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(fmt, ">")?;
+            self.start.fmt(fmt)?;
+            write!(fmt, "..")?;
+            self.end.fmt(fmt)?;
+            Ok(())
+        }
+    }
+
+    #[derive(Clone, Hash, PartialEq, Eq)]
+    pub struct RangeFromExclusive<T> {
+        pub start: T,
+    }
+    impl<T> std::ops::RangeBounds<T> for RangeFromExclusive<T> {
+        fn start_bound(&self) -> std::ops::Bound<&T> {
+            std::ops::Bound::Excluded(&self.start)
+        }
+        fn end_bound(&self) -> std::ops::Bound<&T> {
+            std::ops::Bound::Unbounded
+        }
+    }
+    impl<Idx: fmt::Debug> fmt::Debug for RangeFromExclusive<Idx> {
+        fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
+            write!(fmt, ">")?;
+            self.start.fmt(fmt)?;
+            write!(fmt, "..")?;
+            Ok(())
+        }
+    }
+}
+
 /// Various validators which can be used in `ValidatedDataRef` structs to provide data
 /// validation functions.
 pub mod validator {
@@ -213,7 +364,7 @@ pub mod validator {
     /// Note that when the dataref is referencing an array, the `validate` function
     /// will be invoked for the individual elements of the array, instead of the
     /// array as a whole.
-    pub trait DataValidator<T: ?Sized> {
+    pub trait Validator<T: ?Sized> {
         /// The error returned from the validator in case data validation failed.
         type Error;
         /// Called by the validator to validate individual data items.
@@ -224,7 +375,7 @@ pub mod validator {
     /// validator returns success if both subvalidations succeed. For example
     /// to validate a dataref fits within the overlap of two numerical ranges:
     /// ```
-    /// use xplm::data::validator::{self, DataValidator};
+    /// use xplm::data::validator::{self, Validator};
     /// type CheckRangeA = validator::RangeInclusive<0, 10>;
     /// type CheckRangeB = validator::RangeFrom<5>;
     /// type CombinedCheck = validator::And<i32, CheckRangeA, CheckRangeB>;
@@ -242,15 +393,15 @@ pub mod validator {
     /// assert!(CombinedCheckF32::validate(&10.0001).is_err());// Just outside of 0..=10
     /// ```
     #[derive(Copy, Clone, Debug)]
-    pub struct And<T, A: DataValidator<T>, B: DataValidator<T>> {
+    pub struct And<T, A: Validator<T>, B: Validator<T>> {
         validator_a: PhantomData<A>,
         validator_b: PhantomData<B>,
         data: PhantomData<T>,
     }
-    impl<T, A, B> DataValidator<T> for And<T, A, B>
+    impl<T, A, B> Validator<T> for And<T, A, B>
     where
-        A: DataValidator<T>,
-        B: DataValidator<T, Error = A::Error>,
+        A: Validator<T>,
+        B: Validator<T, Error = A::Error>,
     {
         type Error = A::Error;
         fn validate(data: &T) -> Result<(), Self::Error> {
@@ -262,7 +413,7 @@ pub mod validator {
     /// validator returns success if either subvalidation succeeds. For example
     /// to validate a dataref fits within one of two separate ranges:
     /// ```
-    /// use xplm::data::validator::{self, DataValidator};
+    /// use xplm::data::validator::{self, Validator};
     /// type CheckRangeA = validator::RangeInclusive<0, 5>;
     /// type CheckRangeB = validator::RangeFrom<10>;
     /// type CombinedCheck = validator::Or<i32, CheckRangeA, CheckRangeB>;
@@ -273,15 +424,15 @@ pub mod validator {
     /// assert!(CombinedCheck::validate(&7).is_err());  // Within neither range
     /// ```
     #[derive(Copy, Clone, Debug)]
-    pub struct Or<T, A: DataValidator<T>, B: DataValidator<T>> {
+    pub struct Or<T, A: Validator<T>, B: Validator<T>> {
         validator_a: PhantomData<A>,
         validator_b: PhantomData<B>,
         data: PhantomData<T>,
     }
-    impl<T, A, B> DataValidator<T> for Or<T, A, B>
+    impl<T, A, B> Validator<T> for Or<T, A, B>
     where
-        A: DataValidator<T>,
-        B: DataValidator<T, Error = A::Error>,
+        A: Validator<T>,
+        B: Validator<T, Error = A::Error>,
     {
         type Error = A::Error;
         fn validate(data: &T) -> Result<(), Self::Error> {
@@ -307,26 +458,17 @@ pub mod validator {
         NotInRange(T, RangeAny<T>),
     }
 
+    /// Validator for floating point numbers, which returns success if the number
+    /// is classified as a normal number (finite, non-NaN and non-denormal).
     #[derive(Copy, Clone, Debug)]
     pub struct NormalFloat {}
-    impl<T: num::Float> DataValidator<T> for NormalFloat {
+    impl<T: num::Float> Validator<T> for NormalFloat {
         type Error = NumberValidationError<T>;
         fn validate(data: &T) -> Result<(), Self::Error> {
             match data.classify() {
                 FpCategory::Normal => Ok(()),
                 _ => Err(NumberValidationError::NotNormal(*data)),
             }
-        }
-    }
-
-    #[derive(Copy, Clone, Debug)]
-    pub struct Positive {}
-    impl<T: num::Num + num::Zero + Copy + PartialOrd> DataValidator<T> for Positive {
-        type Error = NumberValidationError<T>;
-        fn validate(data: &T) -> Result<(), Self::Error> {
-            (*data > T::zero())
-                .then_some(())
-                .ok_or(NumberValidationError::NotPositive(*data))
         }
     }
 
@@ -337,9 +479,12 @@ pub mod validator {
             })
         };
     }
+    /// Provides a range validator equivalent to a half-open `START..END` range expression.
+    /// The start and end bounds must be specified as generic constants when this type is
+    /// used.
     #[derive(Copy, Clone, Debug)]
     pub struct Range<const START: i64, const END: i64> {}
-    impl<T, const START: i64, const END: i64> DataValidator<T> for Range<START, END>
+    impl<T, const START: i64, const END: i64> Validator<T> for Range<START, END>
     where
         T: num::Num + Copy + PartialOrd + num::FromPrimitive,
     {
@@ -353,9 +498,32 @@ pub mod validator {
                 .ok_or(NumberValidationError::NotInRange(*data, rng.into()))
         }
     }
+    /// Provides a range validator, where both the start and end bound are open. This
+    /// has no direct equivalent in Rust's range expressions. The start and end bounds
+    /// must be specified as generic constants when this type is used.
+    #[derive(Copy, Clone, Debug)]
+    pub struct RangeExclusive<const START: i64, const END: i64> {}
+    impl<T, const START: i64, const END: i64> Validator<T> for RangeExclusive<START, END>
+    where
+        T: num::Num + Copy + PartialOrd + num::FromPrimitive,
+    {
+        type Error = NumberValidationError<T>;
+        fn validate(data: &T) -> Result<(), Self::Error> {
+            use std::ops::RangeBounds;
+            let start = try_conv_from_i64!(T, START);
+            let end = try_conv_from_i64!(T, END);
+            let rng = super::range::RangeExclusive { start, end };
+            rng.contains(data)
+                .then_some(())
+                .ok_or(NumberValidationError::NotInRange(*data, rng.into()))
+        }
+    }
+    /// Provides a range validator equivalent to an inclusive `START..=END` Rust range
+    /// express. The start and end bounds must be specified as generic constants when
+    /// this type is used.
     #[derive(Copy, Clone, Debug)]
     pub struct RangeInclusive<const START: i64, const END: i64> {}
-    impl<T, const START: i64, const END: i64> DataValidator<T> for RangeInclusive<START, END>
+    impl<T, const START: i64, const END: i64> Validator<T> for RangeInclusive<START, END>
     where
         T: num::Num + Copy + PartialOrd + num::FromPrimitive,
     {
@@ -369,9 +537,12 @@ pub mod validator {
                 .ok_or(NumberValidationError::NotInRange(*data, rng.into()))
         }
     }
+    /// Provides a range validator equivalent to a half-bounded `START..` Rust range
+    /// expression. The start and end bounds must be specified as generic constants
+    /// when this type is used.
     #[derive(Copy, Clone, Debug)]
     pub struct RangeFrom<const START: i64> {}
-    impl<T, const START: i64> DataValidator<T> for RangeFrom<START>
+    impl<T, const START: i64> Validator<T> for RangeFrom<START>
     where
         T: num::Num + Copy + PartialOrd + num::FromPrimitive,
     {
@@ -384,9 +555,31 @@ pub mod validator {
                 .ok_or(NumberValidationError::NotInRange(*data, rng.into()))
         }
     }
+    /// Provides a range validator, where the start bound is exclusive and the end
+    /// is unbounded. This has no direct equivalent in Rust's range expressions. The
+    /// start bound must be specified as a generic constant when this type is used.
+    #[derive(Copy, Clone, Debug)]
+    pub struct RangeFromExclusive<const START: i64> {}
+    impl<T, const START: i64> Validator<T> for RangeFromExclusive<START>
+    where
+        T: num::Num + Copy + PartialOrd + num::FromPrimitive,
+    {
+        type Error = NumberValidationError<T>;
+        fn validate(data: &T) -> Result<(), Self::Error> {
+            use std::ops::RangeBounds;
+            let start = try_conv_from_i64!(T, START);
+            let rng = super::range::RangeFromExclusive { start };
+            rng.contains(data)
+                .then_some(())
+                .ok_or(NumberValidationError::NotInRange(*data, rng.into()))
+        }
+    }
+    /// Provides a range validator equivalent to a half-bounded exclusive `..END`
+    /// Rust range expression. The start and end bounds must be specified as
+    /// generic constants when this type is used.
     #[derive(Copy, Clone, Debug)]
     pub struct RangeTo<const START: i64> {}
-    impl<T, const END: i64> DataValidator<T> for RangeTo<END>
+    impl<T, const END: i64> Validator<T> for RangeTo<END>
     where
         T: num::Num + Copy + PartialOrd + num::FromPrimitive,
     {
@@ -399,9 +592,12 @@ pub mod validator {
                 .ok_or(NumberValidationError::NotInRange(*data, rng.into()))
         }
     }
+    /// Provides a range validator equivalent to a half-bounded inclusive
+    /// `..=END` Rust range expression. The start and end bounds must be
+    /// specified as generic constants when this type is used.
     #[derive(Copy, Clone, Debug)]
     pub struct RangeToInclusive<const START: i64> {}
-    impl<T, const END: i64> DataValidator<T> for RangeToInclusive<END>
+    impl<T, const END: i64> Validator<T> for RangeToInclusive<END>
     where
         T: num::Num + Copy + PartialOrd + num::FromPrimitive,
     {
@@ -417,12 +613,14 @@ pub mod validator {
 
     #[derive(Clone, Debug)]
     pub enum RangeAny<T> {
-        Range(std::ops::Range<T>),
-        RangeFrom(std::ops::RangeFrom<T>),
-        RangeFull(std::ops::RangeFull),
-        RangeInclusive(std::ops::RangeInclusive<T>),
-        RangeTo(std::ops::RangeTo<T>),
-        RangeToInclusive(std::ops::RangeToInclusive<T>),
+        Range(::std::ops::Range<T>),
+        RangeExclusive(super::range::RangeExclusive<T>),
+        RangeFrom(::std::ops::RangeFrom<T>),
+        RangeFromExclusive(super::range::RangeFromExclusive<T>),
+        RangeFull(::std::ops::RangeFull),
+        RangeInclusive(::std::ops::RangeInclusive<T>),
+        RangeTo(::std::ops::RangeTo<T>),
+        RangeToInclusive(::std::ops::RangeToInclusive<T>),
     }
     macro_rules! impl_from_for_range_any {
         ($srctype:ty, $variant:ident) => {
@@ -434,7 +632,9 @@ pub mod validator {
         };
     }
     impl_from_for_range_any!(::std::ops::Range<T>, Range);
+    impl_from_for_range_any!(super::range::RangeExclusive<T>, RangeExclusive);
     impl_from_for_range_any!(::std::ops::RangeFrom<T>, RangeFrom);
+    impl_from_for_range_any!(super::range::RangeFromExclusive<T>, RangeFromExclusive);
     impl_from_for_range_any!(::std::ops::RangeFull, RangeFull);
     impl_from_for_range_any!(::std::ops::RangeInclusive<T>, RangeInclusive);
     impl_from_for_range_any!(::std::ops::RangeTo<T>, RangeTo);
@@ -444,7 +644,10 @@ pub mod validator {
         #[test]
         fn test_validate_enum() {
             use crate::data::borrowed::TypedDataRef;
-            #[derive(derive_more::TryFrom)]
+            use crate::data::{
+                TypedArrayRead, TypedArrayReadWrite, TypedDataRead, TypedDataReadWrite,
+            };
+            #[derive(derive_more::TryFrom, Copy, Clone, Debug, PartialEq, Eq)]
             #[try_from(repr)]
             #[repr(i32)]
             enum ValidValues {
@@ -452,7 +655,34 @@ pub mod validator {
                 B,
                 C,
             }
-            let _dr = TypedDataRef::<i32, ValidValues>::find("test");
+            impl From<ValidValues> for i32 {
+                fn from(value: ValidValues) -> Self {
+                    value as _
+                }
+            }
+            impl From<ValidValues> for u8 {
+                fn from(value: ValidValues) -> Self {
+                    value as _
+                }
+            }
+            let mut dr = TypedDataRef::<i32, ValidValues>::find("test/i32")
+                .unwrap()
+                .writeable()
+                .unwrap();
+            let en = ValidValues::C;
+            dr.set(en);
+            assert_ne!(dr.get().unwrap(), ValidValues::A);
+            assert_ne!(dr.get().unwrap(), ValidValues::B);
+            assert_eq!(dr.get().unwrap(), ValidValues::C);
+
+            let mut array_dr = TypedDataRef::<[i32], ValidValues>::find("test/i32array")
+                .unwrap()
+                .writeable()
+                .unwrap();
+            let en = ValidValues::C;
+            array_dr.set(std::iter::once(en));
+            let en_out = array_dr.get_subdata(0..1).unwrap();
+            assert_eq!(en_out, vec![ValidValues::C]);
         }
     }
 }

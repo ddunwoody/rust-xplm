@@ -15,6 +15,8 @@ const DRE_PLUGIN_SIGS: &[&CStr] = &[
 const DRE_MSG_ADD_DATAREF: i32 = 0x01000000;
 static DATAREF_EDITOR: Mutex<OnceCell<Option<XPLMPluginID>>> = Mutex::new(OnceCell::new());
 
+pub struct Owned {}
+
 /// A dataref owned by this plugin
 ///
 /// The access parameter of this type determines whether X-Plane and other plugins can write
@@ -232,6 +234,15 @@ macro_rules! impl_read_write {
                 dest_sub.copy_from_slice(value_sub);
                 copy_length
             }
+            fn get_subdata(&self, dest: &mut [$native_type], start_offset: usize) -> usize {
+                let copy_length =
+                    cmp::min(dest.len(), self.value.len().saturating_sub(start_offset));
+                let dest_sub = &mut dest[..copy_length];
+                let end_offset = start_offset + copy_length;
+                let value_sub = &self.value[start_offset..end_offset];
+                dest_sub.copy_from_slice(value_sub);
+                copy_length
+            }
             fn len(&self) -> usize {
                 self.value.len()
             }
@@ -241,6 +252,14 @@ macro_rules! impl_read_write {
                 let copy_length = cmp::min(values.len(), self.value.len());
                 let src_sub = &values[..copy_length];
                 let values_sub = &mut self.value[..copy_length];
+                values_sub.copy_from_slice(src_sub);
+            }
+            fn set_subdata(&mut self, values: &[$native_type], start_offset: usize) {
+                let copy_length =
+                    cmp::min(values.len(), self.value.len().saturating_sub(start_offset));
+                let src_sub = &values[..copy_length];
+                let end_offset = start_offset + copy_length;
+                let values_sub = &mut self.value[start_offset..end_offset];
                 values_sub.copy_from_slice(src_sub);
             }
         }

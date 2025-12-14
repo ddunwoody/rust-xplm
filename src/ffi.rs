@@ -34,6 +34,10 @@ impl StringBuffer {
         }
     }
 
+    pub fn truncate(&mut self, length: usize) {
+        self.bytes.truncate(length);
+    }
+
     /// Returns a mutable pointer to the data in this buffer
     pub unsafe fn as_mut_ptr(&mut self) -> *mut c_char {
         self.bytes.as_mut_ptr() as *mut c_char

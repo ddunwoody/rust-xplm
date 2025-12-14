@@ -40,10 +40,11 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+use core::slice;
 use std::{
     cell::OnceCell,
     collections::HashMap,
-    ffi::{c_char, c_void, CStr},
+    ffi::{c_char, c_double, c_float, c_int, c_void, CStr},
     sync::Mutex,
 };
 
@@ -55,12 +56,14 @@ static TEST_STUB_DATAREFS: Mutex<OnceCell<HashMap<&'static CStr, TestDataRef>>> 
 const TEST_ARRAY_LEN: usize = 5;
 
 #[allow(dead_code)]
+#[derive(Debug)]
 enum TestDataRef {
     I32(i32),
     F32(f32),
     F64(f64),
     I32Array([i32; TEST_ARRAY_LEN]),
     F32Array([f32; TEST_ARRAY_LEN]),
+    ByteArray([u8; TEST_ARRAY_LEN]),
 }
 
 fn create_test_drs() -> HashMap<&'static CStr, TestDataRef> {
@@ -72,6 +75,10 @@ fn create_test_drs() -> HashMap<&'static CStr, TestDataRef> {
     map.insert(
         c"test/f32array",
         TestDataRef::F32Array([0.0; TEST_ARRAY_LEN]),
+    );
+    map.insert(
+        c"test/bytearray",
+        TestDataRef::ByteArray([0; TEST_ARRAY_LEN]),
     );
     map
 }
@@ -86,6 +93,7 @@ pub extern "C" fn XPLMGetDataRefTypes(dr: XPLMDataRef) -> XPLMDataTypeID {
         TestDataRef::F64(_) => xplm_sys::xplmType_Double as _,
         TestDataRef::I32Array(_) => xplm_sys::xplmType_IntArray as _,
         TestDataRef::F32Array(_) => xplm_sys::xplmType_FloatArray as _,
+        TestDataRef::ByteArray(_) => xplm_sys::xplmType_Data as _,
     }
 }
 
@@ -100,3 +108,83 @@ pub extern "C" fn XPLMFindDataRef(name: *const c_char) -> XPLMDataRef {
     let dr_ptr: *const TestDataRef = dr;
     dr_ptr as *mut c_void
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn XPLMCanWriteDataRef(_: XPLMDataRef) -> c_int {
+    1
+}
+
+macro_rules! impl_scalar_dr_accessors {
+    ($getter:ident, $setter:ident, $c_type:ty, $variant:ident) => {
+        #[unsafe(no_mangle)]
+        pub extern "C" fn $getter(dr: XPLMDataRef) -> $c_type {
+            let dr = unsafe { (dr as *const TestDataRef).as_ref().unwrap() };
+            match dr {
+                TestDataRef::$variant(inner_value) => *inner_value,
+                _ => panic!("attempted to {} from dataref {dr:?}", stringify!($getter)),
+            }
+        }
+        #[unsafe(no_mangle)]
+        pub extern "C" fn $setter(dr: XPLMDataRef, value: $c_type) {
+            let dr = unsafe { (dr as *mut TestDataRef).as_mut().unwrap() };
+            match dr {
+                TestDataRef::$variant(inner_value) => *inner_value = value,
+                _ => panic!("attempted to write {value:?} into dataref {dr:?}"),
+            }
+        }
+    };
+}
+
+impl_scalar_dr_accessors!(XPLMGetDatai, XPLMSetDatai, c_int, I32);
+impl_scalar_dr_accessors!(XPLMGetDataf, XPLMSetDataf, c_float, F32);
+impl_scalar_dr_accessors!(XPLMGetDatad, XPLMSetDatad, c_double, F64);
+
+macro_rules! impl_vector_dr_accessors {
+    ($getter:ident, $setter:ident, $c_type:ty, $variant:ident) => {
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $getter(
+            dr: XPLMDataRef,
+            dest: *mut $c_type,
+            start_offset: c_int,
+            out_cap: c_int,
+        ) -> c_int {
+            let dr = unsafe { (dr as *const TestDataRef).as_ref().unwrap() };
+            let start_offset = usize::try_from(start_offset).unwrap();
+            match dr {
+                TestDataRef::$variant(src) => {
+                    let dest = unsafe { slice::from_raw_parts_mut(dest as *mut _, out_cap as _) };
+                    let copy_length = dest.len().min(src.len().saturating_sub(start_offset));
+                    let end_offset = start_offset + copy_length;
+                    dest[..copy_length].copy_from_slice(&src[start_offset..end_offset]);
+                    copy_length as _
+                }
+                _ => panic!("attempted to {} from dataref {dr:?}", stringify!($getter)),
+            }
+        }
+
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $setter(
+            dr: XPLMDataRef,
+            src: *mut $c_type,
+            start_offset: c_int,
+            out_cap: c_int,
+        ) -> c_int {
+            let dr = unsafe { (dr as *mut TestDataRef).as_mut().unwrap() };
+            let start_offset = usize::try_from(start_offset).unwrap();
+            match dr {
+                TestDataRef::$variant(dest) => {
+                    let src = unsafe { slice::from_raw_parts(src as *const _, out_cap as _) };
+                    let copy_length = src.len().min(dest.len().saturating_sub(start_offset));
+                    let end_offset = start_offset + copy_length;
+                    dest[start_offset..end_offset].copy_from_slice(&src[..copy_length]);
+                    copy_length as _
+                }
+                _ => panic!("attempted to {} into dataref {dr:?}", stringify!($setter)),
+            }
+        }
+    };
+}
+
+impl_vector_dr_accessors!(XPLMGetDatavi, XPLMSetDatavi, c_int, I32Array);
+impl_vector_dr_accessors!(XPLMGetDatavf, XPLMSetDatavf, c_float, F32Array);
+impl_vector_dr_accessors!(XPLMGetDatab, XPLMSetDatab, c_void, ByteArray);
