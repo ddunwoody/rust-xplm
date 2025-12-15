@@ -1,5 +1,6 @@
 use crate::ffi::StringBuffer;
 use std::ffi::{CString, NulError};
+use std::marker::PhantomData;
 use std::string::FromUtf8Error;
 use xplm_sys::*;
 
@@ -204,7 +205,6 @@ pub trait ValidatedDataReadWrite<T, V>
 where
     T: DataType,
     V: validator::Validator<T::Validation>,
-    Self: ValidatedDataRead<T, V>,
 {
     fn set(&mut self, value: T) -> Result<(), V::Error>;
 }
@@ -221,7 +221,6 @@ where
 
 pub trait ValidatedArrayReadWrite<T, V>
 where
-    Self: ValidatedArrayRead<T, V>,
     T: ArrayType + ?Sized,
     V: validator::Validator<T::Validation>,
 {
@@ -261,6 +260,73 @@ where
     fn set(&mut self, values: impl Iterator<Item = R>);
     fn set_subdata(&mut self, values: impl Iterator<Item = R>, offset: usize);
 }
+
+/// A dataref that first validates all input and output data before passing it on.
+/// This can be used to avoid attempting to write junk into the dataref system, or
+/// consuming junk written by somebody else.
+///
+/// This works the same as a normal DataRef struct, except the second generic
+/// argument must be a struct which implements the `Validator` trait. See
+/// `crate::data::validator` for a list of ready-to-use data validators.
+pub struct ValidatedData<T, V, Dref>
+where
+    T: DataType + ?Sized,
+    V: validator::Validator<T::Validation>,
+{
+    dr: Dref,
+    data: PhantomData<T>,
+    validator: PhantomData<V>,
+}
+
+macro_rules! impl_validated_data {
+    // Scalar version
+    ($native_type:ty) => {
+        impl<V, Dref> ValidatedDataReadWrite<$native_type, V>
+            for ValidatedData<$native_type, V, Dref>
+        where
+            V: validator::Validator<$native_type>,
+            Dref: DataReadWrite<$native_type>,
+        {
+            fn set(&mut self, value: $native_type) -> Result<(), V::Error> {
+                V::validate(&value)?;
+                self.dr.set(value);
+                Ok(())
+            }
+        }
+    };
+    // Array version
+    (array $native_type:ty) => {
+        impl<V, Dref> ValidatedArrayReadWrite<[$native_type], V>
+            for ValidatedData<[$native_type], V, Dref>
+        where
+            V: validator::Validator<$native_type>,
+            Dref: ArrayReadWrite<[$native_type]>,
+        {
+            fn set(&mut self, values: &[$native_type]) -> Result<(), V::Error> {
+                if let Some(e) = values.iter().find_map(|value| V::validate(value).err()) {
+                    return Err(e);
+                }
+                self.dr.set(values);
+                Ok(())
+            }
+        }
+    };
+}
+
+impl_validated_data!(i8);
+impl_validated_data!(u8);
+impl_validated_data!(i16);
+impl_validated_data!(u16);
+impl_validated_data!(i32);
+impl_validated_data!(u32);
+impl_validated_data!(f32);
+impl_validated_data!(f64);
+
+impl_validated_data!(array i8);
+impl_validated_data!(array u8);
+impl_validated_data!(array i32);
+impl_validated_data!(array u32);
+impl_validated_data!(array f32);
 
 macro_rules! impl_type {
     ($native_type:ty as $sim_type:ident) => {
@@ -366,7 +432,7 @@ pub mod validator {
     /// array as a whole.
     pub trait Validator<T: ?Sized> {
         /// The error returned from the validator in case data validation failed.
-        type Error;
+        type Error: std::fmt::Debug;
         /// Called by the validator to validate individual data items.
         fn validate(data: &T) -> Result<(), Self::Error>;
     }
@@ -462,7 +528,7 @@ pub mod validator {
     /// is classified as a normal number (finite, non-NaN and non-denormal).
     #[derive(Copy, Clone, Debug)]
     pub struct NormalFloat {}
-    impl<T: num::Float> Validator<T> for NormalFloat {
+    impl<T: num::Float + std::fmt::Debug> Validator<T> for NormalFloat {
         type Error = NumberValidationError<T>;
         fn validate(data: &T) -> Result<(), Self::Error> {
             match data.classify() {
@@ -486,7 +552,7 @@ pub mod validator {
     pub struct Range<const START: i64, const END: i64> {}
     impl<T, const START: i64, const END: i64> Validator<T> for Range<START, END>
     where
-        T: num::Num + Copy + PartialOrd + num::FromPrimitive,
+        T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
     {
         type Error = NumberValidationError<T>;
         fn validate(data: &T) -> Result<(), Self::Error> {
@@ -505,7 +571,7 @@ pub mod validator {
     pub struct RangeExclusive<const START: i64, const END: i64> {}
     impl<T, const START: i64, const END: i64> Validator<T> for RangeExclusive<START, END>
     where
-        T: num::Num + Copy + PartialOrd + num::FromPrimitive,
+        T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
     {
         type Error = NumberValidationError<T>;
         fn validate(data: &T) -> Result<(), Self::Error> {
@@ -525,7 +591,7 @@ pub mod validator {
     pub struct RangeInclusive<const START: i64, const END: i64> {}
     impl<T, const START: i64, const END: i64> Validator<T> for RangeInclusive<START, END>
     where
-        T: num::Num + Copy + PartialOrd + num::FromPrimitive,
+        T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
     {
         type Error = NumberValidationError<T>;
         fn validate(data: &T) -> Result<(), Self::Error> {
@@ -544,7 +610,7 @@ pub mod validator {
     pub struct RangeFrom<const START: i64> {}
     impl<T, const START: i64> Validator<T> for RangeFrom<START>
     where
-        T: num::Num + Copy + PartialOrd + num::FromPrimitive,
+        T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
     {
         type Error = NumberValidationError<T>;
         fn validate(data: &T) -> Result<(), Self::Error> {
@@ -562,7 +628,7 @@ pub mod validator {
     pub struct RangeFromExclusive<const START: i64> {}
     impl<T, const START: i64> Validator<T> for RangeFromExclusive<START>
     where
-        T: num::Num + Copy + PartialOrd + num::FromPrimitive,
+        T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
     {
         type Error = NumberValidationError<T>;
         fn validate(data: &T) -> Result<(), Self::Error> {
@@ -581,7 +647,7 @@ pub mod validator {
     pub struct RangeTo<const START: i64> {}
     impl<T, const END: i64> Validator<T> for RangeTo<END>
     where
-        T: num::Num + Copy + PartialOrd + num::FromPrimitive,
+        T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
     {
         type Error = NumberValidationError<T>;
         fn validate(data: &T) -> Result<(), Self::Error> {
@@ -599,7 +665,7 @@ pub mod validator {
     pub struct RangeToInclusive<const START: i64> {}
     impl<T, const END: i64> Validator<T> for RangeToInclusive<END>
     where
-        T: num::Num + Copy + PartialOrd + num::FromPrimitive,
+        T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
     {
         type Error = NumberValidationError<T>;
         fn validate(data: &T) -> Result<(), Self::Error> {
@@ -639,10 +705,25 @@ pub mod validator {
     impl_from_for_range_any!(::std::ops::RangeInclusive<T>, RangeInclusive);
     impl_from_for_range_any!(::std::ops::RangeTo<T>, RangeTo);
     impl_from_for_range_any!(::std::ops::RangeToInclusive<T>, RangeToInclusive);
+
     #[cfg(test)]
     mod test {
+        use crate::data::{borrowed::DataRef, ValidatedDataReadWrite};
+
         #[test]
-        fn test_validate_enum() {
+        fn test_validated_dataref() {
+            use crate::data::{validator, ValidatedData};
+
+            let mut dr: ValidatedData<i32, validator::Range<0, 5>, DataRef<_, _>> =
+                ValidatedData::find("test/i32")
+                    .unwrap()
+                    .writeable()
+                    .unwrap();
+            assert!(dr.set(4).is_ok());
+            assert!(dr.set(5).is_err());
+        }
+        #[test]
+        fn test_typed_dataref() {
             use crate::data::borrowed::TypedDataRef;
             use crate::data::{
                 TypedArrayRead, TypedArrayReadWrite, TypedDataRead, TypedDataReadWrite,

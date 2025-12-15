@@ -1,21 +1,13 @@
-use super::{Access, ArrayRead, ArrayReadWrite, DataRead, DataReadWrite, DataType, ReadOnly};
-use std::cell::OnceCell;
+use super::{
+    validator, Access, ArrayRead, ArrayReadWrite, ArrayType, DataRead, DataReadWrite, DataType,
+    ReadOnly, ValidatedData,
+};
 use std::cmp;
-use std::ffi::{CStr, CString, NulError};
+use std::ffi::{CString, NulError};
 use std::marker::PhantomData;
 use std::os::raw::{c_int, c_void};
 use std::ptr;
-use std::sync::Mutex;
 use xplm_sys::*;
-
-const DRE_PLUGIN_SIGS: &[&CStr] = &[
-    c"com.leecbaker.datareftool",
-    c"xplanesdk.examples.DataRefEditor",
-];
-const DRE_MSG_ADD_DATAREF: i32 = 0x01000000;
-static DATAREF_EDITOR: Mutex<OnceCell<Option<XPLMPluginID>>> = Mutex::new(OnceCell::new());
-
-pub struct Owned {}
 
 /// A dataref owned by this plugin
 ///
@@ -77,6 +69,28 @@ impl<T: DataType + ?Sized, A: Access> OwnedData<T, A> {
             )
         };
 
+        #[cfg(not(test))]
+        Self::notify_dre_plugin(&name_c);
+
+        assert!(!id.is_null());
+        Ok(OwnedData {
+            id,
+            value: value_box,
+            access_phantom: PhantomData,
+        })
+    }
+
+    #[cfg(not(test))]
+    fn notify_dre_plugin(name_c: &std::ffi::CStr) {
+        use std::cell::OnceCell;
+        use std::sync::Mutex;
+        const DRE_PLUGIN_SIGS: &[&std::ffi::CStr] = &[
+            c"com.leecbaker.datareftool",
+            c"xplanesdk.examples.DataRefEditor",
+        ];
+        const DRE_MSG_ADD_DATAREF: i32 = 0x01000000;
+        static DATAREF_EDITOR: Mutex<OnceCell<Option<XPLMPluginID>>> = Mutex::new(OnceCell::new());
+
         // Check if DataRefEditor is present. If it is, notify it of the
         // new dataref.
         if let Some(plugin_id) = DATAREF_EDITOR
@@ -102,13 +116,6 @@ impl<T: DataType + ?Sized, A: Access> OwnedData<T, A> {
                 );
             }
         }
-
-        assert!(!id.is_null());
-        Ok(OwnedData {
-            id,
-            value: value_box,
-            access_phantom: PhantomData,
-        })
     }
 
     /// Returns 1 if this dataref should be writeable by other plugins and X-Plane
@@ -282,7 +289,7 @@ impl_read_write!(for array [u8]);
 impl_read_write!(for array [i8]);
 
 /// Errors that can occur when creating a DataRef
-#[derive(thiserror::Error, Debug)]
+#[derive(Clone, thiserror::Error, Debug)]
 pub enum CreateError {
     /// The provided DataRef name contained a null byte
     #[error("Null byte in dataref name")]
@@ -435,4 +442,158 @@ unsafe fn array_write<T: Copy>(refcon: *mut c_void, values: *const T, offset: c_
     let dataref_offset = (*dataref_content).as_mut_ptr().add(offset);
     let copy_length = cmp::min(max, dataref_length - offset);
     ptr::copy_nonoverlapping(values, dataref_offset, copy_length);
+}
+
+#[derive(Clone, Debug, thiserror::Error)]
+pub enum ValidatedCreateError<T, V>
+where
+    T: DataType + ?Sized,
+    V: validator::Validator<T::Validation>,
+{
+    #[error("data validation error: {0:?}")]
+    DataInvalid(V::Error),
+    #[error("error creating underlying dataref: {0}")]
+    CreateError(#[from] CreateError),
+}
+
+pub type ValidatedOwnedData<T, V, A = ReadOnly> = ValidatedData<T, V, OwnedData<T, A>>;
+
+macro_rules! impl_validated_owned_data {
+    // scalar case
+    ($native_type:ty) => {
+        impl<V, A> ValidatedOwnedData<$native_type, V, A>
+        where
+            $native_type: DataType,
+            V: validator::Validator<$native_type>,
+            A: Access,
+        {
+            /// Creates a new dataref with the provided name containing the default value of T
+            pub fn create(name: &str) -> Result<Self, ValidatedCreateError<$native_type, V>>
+            where
+                $native_type: Default,
+            {
+                let v = <$native_type>::default();
+                V::validate(&v).map_err(|e| ValidatedCreateError::DataInvalid(e))?;
+                Ok(Self {
+                    dr: OwnedData::create_with_value(name, &v)?,
+                    data: PhantomData,
+                    validator: PhantomData,
+                })
+            }
+            /// Creates a new dataref with the provided name and value
+            pub fn create_with_value(
+                name: &str,
+                value: &$native_type,
+            ) -> Result<Self, ValidatedCreateError<$native_type, V>> {
+                V::validate(value).map_err(|e| ValidatedCreateError::DataInvalid(e))?;
+                Ok(Self {
+                    dr: OwnedData::create_with_value(name, value)?,
+                    data: PhantomData,
+                    validator: PhantomData,
+                })
+            }
+        }
+
+        impl<V, A> DataRead<$native_type> for ValidatedOwnedData<$native_type, V, A>
+        where
+            V: validator::Validator<$native_type>,
+        {
+            fn get(&self) -> $native_type {
+                self.dr.get()
+            }
+        }
+    };
+    (array $native_type:ty) => {
+        impl<V, A> ValidatedOwnedData<[$native_type], V, A>
+        where
+            [$native_type]: ArrayType,
+            V: validator::Validator<$native_type>,
+            A: Access,
+        {
+            /// Creates a new dataref with the provided name containing the default value of T
+            pub fn create(
+                name: &str,
+                len: usize,
+            ) -> Result<Self, ValidatedCreateError<$native_type, V>>
+            where
+                $native_type: Default,
+            {
+                let value = <$native_type>::default();
+                V::validate(&value).map_err(|e| ValidatedCreateError::DataInvalid(e))?;
+                let values = vec![value; len];
+                Ok(Self {
+                    dr: OwnedData::create_with_value(name, &values[..])?,
+                    data: PhantomData,
+                    validator: PhantomData,
+                })
+            }
+            /// Creates a new dataref with the provided name and value
+            pub fn create_with_value(
+                name: &str,
+                values: &[$native_type],
+            ) -> Result<Self, ValidatedCreateError<$native_type, V>> {
+                if let Some(e) = values.iter().find_map(|value| V::validate(value).err()) {
+                    return Err(ValidatedCreateError::DataInvalid(e));
+                }
+                Ok(Self {
+                    dr: OwnedData::create_with_value(name, values)?,
+                    data: PhantomData,
+                    validator: PhantomData,
+                })
+            }
+        }
+
+        impl<V, A> ArrayRead<[$native_type]> for ValidatedOwnedData<[$native_type], V, A>
+        where
+            V: validator::Validator<$native_type>,
+        {
+            fn get(&self, dest: &mut [$native_type]) -> usize {
+                self.dr.get(dest)
+            }
+            fn get_subdata(&self, dest: &mut [$native_type], start_offset: usize) -> usize {
+                self.dr.get_subdata(dest, start_offset)
+            }
+            fn len(&self) -> usize {
+                self.dr.len()
+            }
+        }
+    };
+}
+
+impl_validated_owned_data!(bool);
+impl_validated_owned_data!(u8);
+impl_validated_owned_data!(i8);
+impl_validated_owned_data!(u16);
+impl_validated_owned_data!(i16);
+impl_validated_owned_data!(u32);
+impl_validated_owned_data!(i32);
+impl_validated_owned_data!(f32);
+impl_validated_owned_data!(f64);
+impl_validated_owned_data!(array u8);
+impl_validated_owned_data!(array i8);
+impl_validated_owned_data!(array u32);
+impl_validated_owned_data!(array i32);
+impl_validated_owned_data!(array f32);
+
+#[cfg(test)]
+mod test {
+    use crate::data::owned::ValidatedOwnedData;
+    use crate::data::{validator, DataRead, ReadWrite, ValidatedDataReadWrite};
+
+    #[test]
+    fn test_validated_owned_data() {
+        type TestDatarefValidator = validator::Range<1, 5>;
+        assert!(ValidatedOwnedData::<u32, TestDatarefValidator>::create("test/new/u32").is_err());
+        assert!(
+            ValidatedOwnedData::<u32, TestDatarefValidator>::create_with_value("test/new/u32", &1)
+                .is_ok()
+        );
+        let mut dr = ValidatedOwnedData::<u32, TestDatarefValidator, ReadWrite>::create_with_value(
+            "test/new/u32",
+            &1,
+        )
+        .unwrap();
+        assert!(dr.set(2).is_ok());
+        assert_eq!(dr.get(), 2);
+    }
 }

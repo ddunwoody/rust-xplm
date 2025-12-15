@@ -1,7 +1,6 @@
 use super::{
     ArrayRead, ArrayReadWrite, ArrayType, DataRead, DataReadWrite, DataType, ReadOnly, ReadWrite,
-    TypedArrayRead, TypedArrayReadWrite, TypedDataRead, TypedDataReadWrite, ValidatedArrayRead,
-    ValidatedArrayReadWrite, ValidatedDataRead, ValidatedDataReadWrite,
+    TypedArrayRead, TypedArrayReadWrite, TypedDataRead, TypedDataReadWrite, ValidatedData,
 };
 use std::ffi::{CString, NulError};
 use std::marker::PhantomData;
@@ -65,21 +64,7 @@ impl<T: DataType + ?Sized> DataRef<T, ReadOnly> {
     }
 }
 
-/// A dataref that first validates all input and output data before passing it on.
-/// This can be used to avoid attempting to write junk into the dataref system, or
-/// consuming junk written by somebody else.
-///
-/// This works the same as a normal DataRef struct, except the second generic
-/// argument must be a struct which implements the `Validator` trait. See
-/// `crate::data::validator` for a list of ready-to-use data validators.
-pub struct ValidatedDataRef<T, V, A = ReadOnly>
-where
-    T: DataType + ?Sized,
-    V: super::validator::Validator<T::Validation>,
-{
-    dr: DataRef<T, A>,
-    validator: PhantomData<V>,
-}
+pub type ValidatedDataRef<T, V, A = ReadOnly> = ValidatedData<T, V, DataRef<T, A>>;
 
 impl<T, V> ValidatedDataRef<T, V, ReadOnly>
 where
@@ -89,6 +74,7 @@ where
     pub fn find<S: AsRef<str>>(name: S) -> Result<Self, FindError> {
         Ok(Self {
             dr: DataRef::find(name.as_ref())?,
+            data: PhantomData,
             validator: PhantomData,
         })
     }
@@ -96,8 +82,9 @@ where
     ///
     /// Returns an error if the dataref cannot be written.
     pub fn writeable(self) -> Result<ValidatedDataRef<T, V, ReadWrite>, FindError> {
-        Ok(ValidatedDataRef {
+        Ok(ValidatedData {
             dr: self.dr.writeable()?,
+            data: PhantomData,
             validator: PhantomData,
         })
     }
@@ -158,26 +145,6 @@ macro_rules! dataref_type {
         impl DataReadWrite<$native_type> for DataRef<$native_type, ReadWrite> {
             fn set(&mut self, value: $native_type) {
                 unsafe { $write_fn(self.id, value as $sim_native_type) }
-            }
-        }
-        impl<V, A> ValidatedDataRead<$native_type, V> for ValidatedDataRef<$native_type, V, A>
-        where
-            V: super::validator::Validator<$native_type>,
-        {
-            fn get(&self) -> Result<$native_type, V::Error> {
-                let value = self.dr.get();
-                V::validate(&value).map(|_| value)
-            }
-        }
-        impl<V> ValidatedDataReadWrite<$native_type, V>
-            for ValidatedDataRef<$native_type, V, ReadWrite>
-        where
-            V: super::validator::Validator<$native_type>,
-        {
-            fn set(&mut self, value: $native_type) -> Result<(), V::Error> {
-                V::validate(&value)?;
-                self.dr.set(value);
-                Ok(())
             }
         }
 
@@ -256,41 +223,6 @@ macro_rules! dataref_type {
                         size,
                     );
                 }
-            }
-        }
-
-        impl<V, A> ValidatedArrayRead<[$native_type], V> for ValidatedDataRef<[$native_type], V, A>
-        where
-            V: super::validator::Validator<$native_type>,
-        {
-            fn get(&self, dest: &mut [$native_type]) -> Result<usize, V::Error> {
-                let len = self.dr.get(dest);
-                if let Some(e) = dest[..len]
-                    .iter()
-                    .find_map(|value| V::validate(value).err())
-                {
-                    // Destroy any bad data to avoid using it
-                    dest.iter_mut().for_each(|v| *v = <$native_type>::default());
-                    return Err(e);
-                }
-                Ok(len)
-            }
-            fn len(&self) -> usize {
-                self.dr.len()
-            }
-        }
-
-        impl<V> ValidatedArrayReadWrite<[$native_type], V>
-            for ValidatedDataRef<[$native_type], V, ReadWrite>
-        where
-            V: super::validator::Validator<$native_type>,
-        {
-            fn set(&mut self, values: &[$native_type]) -> Result<(), V::Error> {
-                if let Some(e) = values.iter().find_map(|value| V::validate(value).err()) {
-                    return Err(e);
-                }
-                self.dr.set(values);
-                Ok(())
             }
         }
 
