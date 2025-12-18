@@ -43,78 +43,78 @@
 #[macro_export]
 macro_rules! uom_typed_dataref {
     (
-        dataref: $dr_typename:ident,
-        conv: $conv_typename:ident,
+        $modname:ident,
         uom: $(::)?$($uom_type:ident)::+,
-        phys_unit: $unit_name:ident,
+        phys_unit: $unit_name:ty,
         range: ($minval:literal..$maxval:literal),
-        error: $error_type:ident $(,)?
     ) => {
-        #[derive(Copy, Clone, Debug)]
-        pub struct $conv_typename {}
+        pub mod $modname {
+            use ::uom::si::SI;
+            use $crate::data::typed::{InputUnitConversion, OutputUnitConversion};
+            use $crate::data::typed::borrowed::TypedDataRef;
+            use $crate::data::typed::owned::TypedOwnedData;
 
-        impl<V> $crate::data::typed::InputUnitConversion<V, $($uom_type)::*<::uom::si::SI<V>, V>>
-            for $conv_typename
-        where
-            V: ::num::Num + ::uom::Conversion<V, T = V> + From<i16> + PartialOrd,
-            ::uom::si::SI<V>: ::uom::si::Units<V>,
-            $unit_name: ::uom::Conversion<V, T = V>,
-        {
-            type Error = $error_type;
-            fn try_conv_in(value: V) -> Result<$($uom_type)::*<::uom::si::SI<V>, V>, Self::Error> {
-                (value > V::from($minval) && value < V::from($maxval))
-                    .then(|| $($uom_type)::*::new::<$unit_name>(value))
-                    .ok_or($error_type {})
+            #[derive(Copy, Clone, Debug)]
+            pub struct Conv {}
+
+            #[derive(Copy, Clone, Debug, Eq, PartialEq)]
+            pub struct InvalidValueError {}
+
+            impl<V> InputUnitConversion<V, $($uom_type)::*<SI<V>, V>> for Conv
+            where
+                V: ::num::Num + ::uom::Conversion<V, T = V> + From<i16> + PartialOrd,
+                SI<V>: ::uom::si::Units<V>,
+                $unit_name: ::uom::Conversion<V, T = V>,
+            {
+                type Error = InvalidValueError;
+                fn try_conv_in(value: V) -> Result<
+                    $($uom_type)::*<SI<V>, V>, Self::Error
+                > {
+                    (value > V::from($minval) && value < V::from($maxval))
+                        .then(|| $($uom_type)::*::new::<$unit_name>(value))
+                        .ok_or(InvalidValueError {})
+                }
             }
-        }
-        impl<V> $crate::data::typed::OutputUnitConversion<$($uom_type)::*<::uom::si::SI<V>, V>, V>
-            for $conv_typename
-        where
-            V: ::num::Num + ::uom::Conversion<V, T = V>,
-            ::uom::si::SI<V>: ::uom::si::Units<V>,
-            $unit_name: ::uom::Conversion<V, T = V>,
-        {
-            fn conv_out(value: $($uom_type)::*<::uom::si::SI<V>, V>) -> V {
-                value.get::<$unit_name>()
+            impl<V> OutputUnitConversion<$($uom_type)::*<SI<V>, V>, V> for Conv
+            where
+                V: ::num::Num + ::uom::Conversion<V, T = V>,
+                SI<V>: ::uom::si::Units<V>,
+                $unit_name: ::uom::Conversion<V, T = V>,
+            {
+                fn conv_out(value: $($uom_type)::*<SI<V>, V>) -> V {
+                    value.get::<$unit_name>()
+                }
             }
+            #[allow(dead_code)]
+            pub type DataRef<V, A = $crate::data::ReadOnly> =
+                TypedDataRef<V, $($uom_type)::*<SI<V>, V>, Conv, A>;
+            #[allow(dead_code)]
+            pub type OwnedData<V, A = $crate::data::ReadOnly> =
+                TypedOwnedData<V, $($uom_type)::*<SI<V>, V>, Conv, A>;
         }
-        pub type $dr_typename<V, A = ReadOnly> = $crate::data::typed::borrowed::TypedDataRef<
-            V,
-            $($uom_type)::*<::uom::si::SI<V>, V>,
-            $conv_typename,
-            A,
-        >;
     };
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::data::{
-        typed::{TypedDataRead, TypedDataReadWrite},
-        ReadOnly,
-    };
+    use crate::data::typed::{TypedDataRead, TypedDataReadWrite};
     use uom::si::{
         f32::ThermodynamicTemperature,
         thermodynamic_temperature::{degree_celsius, kelvin},
     };
 
-    #[derive(Copy, Clone, Debug, Eq, PartialEq)]
-    pub struct InvalidTemperature {}
-
     uom_typed_dataref!(
-        dataref: TemperatureCelsiusDataRef,
-        conv: TemperatureCelsiusConv,
+        temperature_celsius,
         uom: uom::si::thermodynamic_temperature::ThermodynamicTemperature,
-        phys_unit: degree_celsius,
+        phys_unit: uom::si::thermodynamic_temperature::degree_celsius,
         range: (-273_i16..5000_i16),
-        error: InvalidTemperature,
     );
 
     #[test]
     fn test_temperature_dataref() {
         let _dr_lock = crate::test_stubs::DATAREF_SYS_LOCK.lock();
 
-        let mut dr = TemperatureCelsiusDataRef::<f32>::find("test/f32")
+        let mut dr = temperature_celsius::DataRef::<f32>::find("test/f32")
             .unwrap()
             .writeable()
             .unwrap();
@@ -125,6 +125,13 @@ mod tests {
         );
         // Try to shove something bad into the dataref to check input range checking
         dr.set(ThermodynamicTemperature::new::<kelvin>(0.0));
-        assert_eq!(dr.get().unwrap_err(), InvalidTemperature {});
+        assert_eq!(
+            dr.get().unwrap_err(),
+            temperature_celsius::InvalidValueError {}
+        );
+
+        let mut dr_owned =
+            temperature_celsius::OwnedData::<f32>::create("test/owned/temp_cel").unwrap();
+        dr_owned.set(ThermodynamicTemperature::new::<degree_celsius>(5.0));
     }
 }
