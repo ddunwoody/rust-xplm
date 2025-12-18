@@ -63,7 +63,7 @@ macro_rules! uom_typed_dataref {
 
             impl<V> InputUnitConversion<V, $($uom_type)::*<SI<V>, V>> for Conv
             where
-                V: ::num::Num + ::uom::Conversion<V, T = V> + From<i16> + PartialOrd,
+                V: ::num::Num + ::uom::Conversion<V, T = V> + From<f32> + PartialOrd,
                 SI<V>: ::uom::si::Units<V>,
                 $unit_name: ::uom::Conversion<V, T = V>,
             {
@@ -118,7 +118,7 @@ mod tests {
         temperature_celsius,
         uom: uom::si::thermodynamic_temperature::ThermodynamicTemperature,
         phys_unit: uom::si::thermodynamic_temperature::degree_celsius,
-        range: (-273_i16..5000_i16),
+        range: (-273.15_f32..5000_f32),
     );
 
     #[test]
@@ -152,10 +152,10 @@ mod tests {
         let mut dr_owned_array =
             temperature_celsius::OwnedData::<[f32]>::create("test/owned/temp_cel_array", 2)
                 .unwrap();
-        dr_owned_array.set([ThermodynamicTemperature::new::<degree_celsius>(100.0); 2].into_iter());
+        dr_owned_array.set([ThermodynamicTemperature::new::<degree_celsius>(0.0); 2].into_iter());
         assert_eq!(
             dr_owned_array.get().unwrap(),
-            [ThermodynamicTemperature::new::<kelvin>(373.15); 2],
+            [ThermodynamicTemperature::new::<kelvin>(273.15); 2],
         );
     }
 }
