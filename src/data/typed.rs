@@ -45,9 +45,9 @@ use std::marker::PhantomData;
 use super::{ArrayRead, ArrayReadWrite, ArrayType, DataRead, DataReadWrite};
 
 pub mod borrowed;
-#[cfg(feature = "unit_conv")]
-pub mod conv;
 pub mod owned;
+#[cfg(feature = "uom_conv")]
+pub mod uom_conv;
 
 pub trait InputUnitConversion<X, R> {
     type Error;
