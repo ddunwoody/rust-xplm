@@ -46,7 +46,7 @@ macro_rules! uom_typed_dataref {
         name: $modname:ident,
         type: $(::)?$($uom_type:ident)::+,
         unit: $unit_name:ty,
-        range: ($minval:literal..$maxval:literal),
+        range: $range:expr,
     ) => {
         pub mod $modname {
             use ::uom::si::SI;
@@ -63,13 +63,15 @@ macro_rules! uom_typed_dataref {
 
             impl<V> InputUnitConversion<V, $($uom_type)::*<SI<V>, V>> for Conv
             where
-                V: ::num::Num + ::uom::Conversion<V, T = V> + From<f32> + PartialOrd,
+                V: ::num::Num + ::uom::Conversion<V, T = V> + PartialOrd + Copy,
+                f64: From<V>,
                 SI<V>: ::uom::si::Units<V>,
                 $unit_name: ::uom::Conversion<V, T = V>,
             {
                 type Error = InvalidValueError;
                 fn try_conv_in(value: V) -> Result<$($uom_type)::*<SI<V>, V>, Self::Error> {
-                    (value > V::from($minval) && value < V::from($maxval))
+                    $range.contains(&f64::from(value))
+                    // (value > V::from($minval) && value < V::from($maxval))
                         .then(|| $($uom_type)::*::new::<$unit_name>(value))
                         .ok_or(InvalidValueError {})
                 }
@@ -118,7 +120,7 @@ mod tests {
         name: temperature_celsius,
         type: uom::si::thermodynamic_temperature::ThermodynamicTemperature,
         unit: uom::si::thermodynamic_temperature::degree_celsius,
-        range: (-273.15_f32..5000_f32),
+        range: -273.15..5000.0,
     );
 
     #[test]
