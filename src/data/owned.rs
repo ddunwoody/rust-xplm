@@ -10,6 +10,7 @@ use xplm_sys::*;
 ///
 /// The access parameter of this type determines whether X-Plane and other plugins can write
 /// this dataref. Owned datarefs can always be written by this plugin.
+#[derive(Debug)]
 pub struct OwnedData<T: DataType + ?Sized, A = ReadOnly> {
     /// The dataref handle
     id: XPLMDataRef,

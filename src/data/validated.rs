@@ -97,6 +97,7 @@ where
 /// This works the same as a normal DataRef struct, except the second generic
 /// argument must be a struct which implements the `Validator` trait. See
 /// `crate::data::validator` for a list of ready-to-use data validators.
+#[derive(Copy, Clone, Debug)]
 pub struct ValidatedData<T, V, Dref>
 where
     T: DataType + ?Sized,

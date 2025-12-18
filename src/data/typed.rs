@@ -58,6 +58,7 @@ pub trait OutputUnitConversion<R, X> {
     fn conv_out(value: R) -> X;
 }
 
+#[derive(Copy, Clone, Debug)]
 pub struct TypedData<X: ?Sized, R, Conversion, Dref> {
     dr: Dref,
     data: PhantomData<X>,

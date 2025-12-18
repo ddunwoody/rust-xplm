@@ -10,6 +10,7 @@ use xplm_sys::*;
 /// T is the data type stored in the dataref.
 ///
 /// A is the access level (`ReadOnly` or `ReadWrite`)
+#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
 pub struct DataRef<T: ?Sized, A = ReadOnly> {
     /// The dataref handle
     id: XPLMDataRef,
