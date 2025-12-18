@@ -42,64 +42,58 @@
 
 use std::marker::PhantomData;
 
-use super::{ArrayRead, ArrayReadWrite, ArrayType, DataRead, DataReadWrite, DataType};
+use super::{ArrayRead, ArrayReadWrite, ArrayType, DataRead, DataReadWrite};
 
 pub mod borrowed;
+#[cfg(feature = "unit_conv")]
+pub mod conv;
 pub mod owned;
 
-pub trait UnitConversion<T> {
-    fn conv(value: T) -> T;
+pub trait InputUnitConversion<X, R> {
+    type Error;
+    fn try_conv_in(value: X) -> Result<R, Self::Error>;
 }
 
-pub struct PassthruConv {}
-impl<T> UnitConversion<T> for PassthruConv {
-    fn conv(value: T) -> T {
-        value
-    }
+pub trait OutputUnitConversion<R, X> {
+    fn conv_out(value: R) -> X;
 }
 
-pub struct TypedData<X, R, Dref, Cin = PassthruConv, Cout = PassthruConv>
-where
-    X: DataType + ?Sized,
-{
+pub struct TypedData<X: ?Sized, R, Conversion, Dref> {
     dr: Dref,
     data: PhantomData<X>,
     rust_type: PhantomData<R>,
-    conv_in: PhantomData<Cin>,
-    conv_out: PhantomData<Cout>,
+    conv: PhantomData<Conversion>,
 }
 
-pub trait TypedDataRead<X, R>
+pub trait TypedDataRead<X, R, C>
 where
-    X: DataType,
-    R: TryFrom<X::Storage>,
+    C: InputUnitConversion<X, R>,
 {
-    fn get(&self) -> Result<R, R::Error>;
+    fn get(&self) -> Result<R, C::Error>;
 }
 
-pub trait TypedDataReadWrite<X, R>
+pub trait TypedDataReadWrite<X, R, C>
 where
-    X: DataType,
-    R: Into<X::Storage>,
+    C: OutputUnitConversion<R, X>,
 {
     fn set(&mut self, value: R);
 }
 
-pub trait TypedArrayRead<X, R>
+pub trait TypedArrayRead<X, R, C>
 where
     X: ArrayType + ?Sized,
-    R: TryFrom<X::Element>,
+    C: InputUnitConversion<X::Validation, R>,
 {
-    fn get(&self) -> Result<Vec<R>, R::Error> {
+    fn get(&self) -> Result<Vec<R>, C::Error> {
         self.get_subdata(..)
     }
-    fn get_subdata(&self, range: impl std::ops::RangeBounds<usize>) -> Result<Vec<R>, R::Error>;
+    fn get_subdata(&self, range: impl std::ops::RangeBounds<usize>) -> Result<Vec<R>, C::Error>;
 }
 
-pub trait TypedArrayReadWrite<X, R>
+pub trait TypedArrayReadWrite<X, R, C>
 where
     X: ArrayType + ?Sized,
-    R: Into<X::Element>,
+    C: OutputUnitConversion<R, X::Validation>,
 {
     fn set(&mut self, values: impl Iterator<Item = R>) {
         self.set_subdata(values, 0);
@@ -109,62 +103,53 @@ where
 
 macro_rules! impl_typed_data {
     ($native_type:ty) => {
-        impl<R, Dref, Cin, Cout> TypedDataRead<$native_type, R>
-            for TypedData<$native_type, R, Dref, Cin, Cout>
+        impl<R, C, Dref> TypedDataRead<$native_type, R, C> for TypedData<$native_type, R, C, Dref>
         where
-            R: TryFrom<$native_type>,
+            C: InputUnitConversion<$native_type, R>,
             Dref: DataRead<$native_type>,
-            Cin: UnitConversion<$native_type>,
         {
-            fn get(&self) -> Result<R, R::Error> {
-                R::try_from(Cin::conv(self.dr.get()))
+            fn get(&self) -> Result<R, C::Error> {
+                C::try_conv_in(self.dr.get())
             }
         }
-        impl<R, Dref, Cin, Cout> TypedDataReadWrite<$native_type, R>
-            for TypedData<$native_type, R, Dref, Cin, Cout>
+        impl<R, C, Dref> TypedDataReadWrite<$native_type, R, C>
+            for TypedData<$native_type, R, C, Dref>
         where
-            R: Into<$native_type>,
+            C: OutputUnitConversion<R, $native_type>,
             Dref: DataReadWrite<$native_type>,
-            Cout: UnitConversion<$native_type>,
         {
             fn set(&mut self, value: R) {
-                self.dr.set(Cout::conv(value.into()));
+                self.dr.set(C::conv_out(value));
             }
         }
     };
     (array $native_type:ty) => {
-        impl<R, Dref, Cin, Cout> TypedArrayRead<[$native_type], R>
-            for TypedData<[$native_type], R, Dref, Cin, Cout>
+        impl<R, C, Dref> TypedArrayReadWrite<[$native_type], R, C>
+            for TypedData<[$native_type], R, C, Dref>
         where
-            [$native_type]: ArrayType,
-            R: TryFrom<$native_type> + Into<$native_type>,
+            C: OutputUnitConversion<R, $native_type>,
+            Dref: ArrayReadWrite<[$native_type]>,
+        {
+            fn set_subdata(&mut self, values: impl Iterator<Item = R>, start_offset: usize) {
+                let values = values.map(|value| C::conv_out(value)).collect::<Vec<_>>();
+                self.dr.set_subdata(&values, start_offset);
+            }
+        }
+        impl<R, C, Dref> TypedArrayRead<[$native_type], R, C>
+            for TypedData<[$native_type], R, C, Dref>
+        where
+            C: InputUnitConversion<$native_type, R>,
             Dref: ArrayRead<[$native_type]>,
-            Cin: UnitConversion<$native_type>,
         {
             fn get_subdata(
                 &self,
                 range: impl std::ops::RangeBounds<usize>,
-            ) -> Result<Vec<R>, R::Error> {
+            ) -> Result<Vec<R>, C::Error> {
                 self.dr
                     .as_vec_subdata(range)
                     .into_iter()
-                    .map(|item| R::try_from(Cin::conv(item)))
+                    .map(|value| C::try_conv_in(value))
                     .collect()
-            }
-        }
-
-        impl<R, Dref, Cin, Cout> TypedArrayReadWrite<[$native_type], R>
-            for TypedData<[$native_type], R, Dref, Cin, Cout>
-        where
-            R: Into<$native_type>,
-            Dref: ArrayReadWrite<[$native_type]>,
-            Cout: UnitConversion<$native_type>,
-        {
-            fn set_subdata(&mut self, values: impl Iterator<Item = R>, start_offset: usize) {
-                let values = values
-                    .map(|value| Cout::conv(value.into()))
-                    .collect::<Vec<_>>();
-                self.dr.set_subdata(&values, start_offset);
             }
         }
     };
@@ -179,52 +164,10 @@ impl_typed_data!(i32);
 impl_typed_data!(u32);
 impl_typed_data!(f32);
 impl_typed_data!(f64);
+
+impl_typed_data!(array bool);
+impl_typed_data!(array i8);
 impl_typed_data!(array u8);
 impl_typed_data!(array i32);
 impl_typed_data!(array u32);
 impl_typed_data!(array f32);
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn test_typed_dataref() {
-        use super::{TypedArrayRead, TypedArrayReadWrite, TypedDataRead, TypedDataReadWrite};
-        use crate::data::borrowed::TypedDataRef;
-        #[derive(derive_more::TryFrom, Copy, Clone, Debug, PartialEq, Eq)]
-        #[try_from(repr)]
-        #[repr(i32)]
-        enum ValidValues {
-            A,
-            B,
-            C,
-        }
-        impl From<ValidValues> for i32 {
-            fn from(value: ValidValues) -> Self {
-                value as _
-            }
-        }
-        impl From<ValidValues> for u8 {
-            fn from(value: ValidValues) -> Self {
-                value as _
-            }
-        }
-        let mut dr = TypedDataRef::<i32, ValidValues>::find("test/i32")
-            .unwrap()
-            .writeable()
-            .unwrap();
-        let en = ValidValues::C;
-        dr.set(en);
-        assert_ne!(dr.get().unwrap(), ValidValues::A);
-        assert_ne!(dr.get().unwrap(), ValidValues::B);
-        assert_eq!(dr.get().unwrap(), ValidValues::C);
-
-        let mut array_dr = TypedDataRef::<[i32], ValidValues>::find("test/i32array")
-            .unwrap()
-            .writeable()
-            .unwrap();
-        let en = ValidValues::C;
-        array_dr.set(std::iter::once(en));
-        let en_out = array_dr.get_subdata(0..1).unwrap();
-        assert_eq!(en_out, vec![ValidValues::C]);
-    }
-}

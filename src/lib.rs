@@ -18,7 +18,7 @@ mod plugin_macro;
 mod internal;
 
 #[cfg(test)]
-mod test_stubs;
+pub(crate) mod test_stubs;
 
 /// Commands
 pub mod command;

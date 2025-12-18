@@ -47,12 +47,9 @@ use crate::data::{
     DataType, ReadOnly, ReadWrite,
 };
 
-use super::{PassthruConv, TypedData};
+pub type TypedDataRef<X, R, C, A = ReadOnly> = super::TypedData<X, R, C, DataRef<X, A>>;
 
-pub type TypedDataRef<X, R, A = ReadOnly, Cin = PassthruConv, Cout = PassthruConv> =
-    TypedData<X, R, DataRef<X, A>, Cin, Cout>;
-
-impl<X, R, Cin, Cout> TypedDataRef<X, R, ReadOnly, Cin, Cout>
+impl<X, R, C> TypedDataRef<X, R, C, ReadOnly>
 where
     X: DataType + ?Sized,
 {
@@ -61,20 +58,72 @@ where
             dr: DataRef::find(name.as_ref())?,
             data: PhantomData,
             rust_type: PhantomData,
-            conv_in: PhantomData,
-            conv_out: PhantomData,
+            conv: PhantomData,
         })
     }
     /// Makes this dataref writable
     ///
     /// Returns an error if the dataref cannot be written.
-    pub fn writeable(self) -> Result<TypedDataRef<X, R, ReadWrite>, FindError> {
+    pub fn writeable(self) -> Result<TypedDataRef<X, R, C, ReadWrite>, FindError> {
         Ok(TypedDataRef {
             dr: self.dr.writeable()?,
             data: PhantomData,
             rust_type: PhantomData,
-            conv_in: PhantomData,
-            conv_out: PhantomData,
+            conv: PhantomData,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::data::typed::{
+        borrowed::TypedDataRef, InputUnitConversion, OutputUnitConversion, TypedArrayRead,
+        TypedArrayReadWrite, TypedDataRead, TypedDataReadWrite,
+    };
+
+    #[test]
+    fn test_typed_dataref() {
+        let _dr_lock = crate::test_stubs::DATAREF_SYS_LOCK.lock();
+
+        #[derive(derive_more::TryFrom, PartialEq, Eq, Debug)]
+        #[try_from(repr)]
+        #[repr(i32)]
+        enum ValidValues {
+            A,
+            B,
+            C,
+        }
+        struct ValidValuesConv {}
+        impl InputUnitConversion<i32, ValidValues> for ValidValuesConv {
+            type Error = derive_more::TryFromReprError<i32>;
+            fn try_conv_in(value: i32) -> Result<ValidValues, Self::Error> {
+                ValidValues::try_from(value)
+            }
+        }
+        impl OutputUnitConversion<ValidValues, i32> for ValidValuesConv {
+            fn conv_out(value: ValidValues) -> i32 {
+                value as _
+            }
+        }
+
+        let mut dr = TypedDataRef::<i32, ValidValues, ValidValuesConv>::find("test/i32")
+            .unwrap()
+            .writeable()
+            .unwrap();
+        let en = ValidValues::C;
+        dr.set(en);
+        assert_ne!(dr.get().unwrap(), ValidValues::A);
+        assert_ne!(dr.get().unwrap(), ValidValues::B);
+        assert_eq!(dr.get().unwrap(), ValidValues::C);
+
+        let mut array_dr =
+            TypedDataRef::<[i32], ValidValues, ValidValuesConv>::find("test/i32array")
+                .unwrap()
+                .writeable()
+                .unwrap();
+        let en = ValidValues::C;
+        array_dr.set(std::iter::once(en));
+        let en_out = array_dr.get_subdata(0..1).unwrap();
+        assert_eq!(en_out, vec![ValidValues::C]);
     }
 }

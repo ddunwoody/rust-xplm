@@ -8,8 +8,17 @@ pub mod borrowed;
 /// Datarefs created by this plugin
 pub mod owned;
 
+/// Datarefs which support direct setting & getting via custom Rusty types.
+/// Use this module to provide maximum input/output validation and validity
+/// checking. This is useful when dealing with datarefs which represent
+/// physical quantities, like temperatures, lengths or pressures.
 pub mod typed;
 
+/// Datarefs which allow creating custom range/value validation rules, without
+/// the need to implement full conversion into/out of your own Rust types.
+/// This is useful when dealing with datarefs which represent abstract ratios
+/// or numerical quantities, not directly correlated to physical units (e.g.
+/// joystick axis ranges, simulation rates, etc.).
 pub mod validated;
 
 /// Marks a dataref as readable

@@ -135,6 +135,8 @@ mod tests {
 
     #[test]
     fn test_validated_dataref() {
+        let _dr_lock = crate::test_stubs::DATAREF_SYS_LOCK.lock();
+
         let mut dr: ValidatedDataRef<i32, validator::Range<0, 5>, ReadWrite> =
             ValidatedDataRef::find("test/i32")
                 .unwrap()

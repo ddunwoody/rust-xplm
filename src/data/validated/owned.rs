@@ -217,6 +217,8 @@ mod tests {
 
     #[test]
     fn test_validated_owned_data() {
+        let _dr_lock = crate::test_stubs::DATAREF_SYS_LOCK.lock();
+
         type TestDatarefValidator = validator::Range<1, 5>;
         assert!(ValidatedOwnedData::<u32, TestDatarefValidator>::create("test/new/u32").is_err());
         assert!(

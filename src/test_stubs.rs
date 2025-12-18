@@ -44,6 +44,7 @@ use core::slice;
 use std::{
     collections::HashMap,
     ffi::{c_char, c_double, c_float, c_int, c_void, CStr, CString},
+    pin::Pin,
     sync::Mutex,
 };
 
@@ -54,7 +55,9 @@ use xplm_sys::{
     XPLMSetDataf_f, XPLMSetDatai_f, XPLMSetDatavf_f, XPLMSetDatavi_f,
 };
 
-static STUB_DATAREFS: Mutex<Option<HashMap<CString, TestData>>> = Mutex::new(None);
+pub(crate) static DATAREF_SYS_LOCK: Mutex<()> = Mutex::new(());
+
+static STUB_DATAREFS: Mutex<Option<HashMap<CString, Pin<Box<TestData>>>>> = Mutex::new(None);
 
 const TEST_ARRAY_LEN: usize = 5;
 
@@ -97,18 +100,19 @@ struct TestDataRef {
 }
 unsafe impl Send for TestDataRef {}
 
-fn create_test_drs() -> HashMap<CString, TestData> {
+fn create_test_drs() -> HashMap<CString, Pin<Box<TestData>>> {
     macro_rules! make_dataref {
         ($map:expr, $name:literal, $variant:ident, $payload:expr) => {
             $map.insert(
                 $name.into(),
-                TestData {
+                Box::pin(TestData {
                     name: $name.into(),
                     data: TestDataPayload::$variant($payload),
-                },
+                }),
             );
         };
     }
+
     let mut map = HashMap::new();
     make_dataref!(map, c"test/i32", OwnedI32, 0);
     make_dataref!(map, c"test/f32", OwnedF32, 0.0);
@@ -142,7 +146,7 @@ pub extern "C" fn XPLMFindDataRef(name: *const c_char) -> XPLMDataRef {
     let Some(dr) = datarefs.get(name) else {
         return std::ptr::null_mut();
     };
-    let dr_ptr: *const TestData = dr;
+    let dr_ptr: *const TestData = &**dr;
     dr_ptr as *mut c_void
 }
 
@@ -335,6 +339,7 @@ impl_vector_dr_accessors!(
     write_data,
 );
 
+#[allow(trivial_casts)]
 #[unsafe(no_mangle)]
 pub extern "C" fn XPLMRegisterDataAccessor(
     name: *const c_char,
@@ -358,9 +363,10 @@ pub extern "C" fn XPLMRegisterDataAccessor(
     let mut datarefs = STUB_DATAREFS.lock().unwrap();
     let datarefs = datarefs.get_or_insert_with(create_test_drs);
 
+    assert!(!name.is_null());
     let name = unsafe { CStr::from_ptr(name).to_owned() };
 
-    let mut dataref = TestData {
+    let dataref = TestData {
         name: name.clone(),
         data: TestDataPayload::Refd(TestDataRef {
             typ,
@@ -381,20 +387,21 @@ pub extern "C" fn XPLMRegisterDataAccessor(
             write_refcon,
         }),
     };
-    let dr_ref: *mut TestData = &mut dataref;
-    let dr_ptr = dr_ref as *mut c_void;
-
-    datarefs.insert(name, dataref);
-
-    dr_ptr
+    let dataref = Box::pin(dataref);
+    assert!(!datarefs.contains_key(&name));
+    let test_data: *mut _ = &mut **datarefs.entry(name).or_insert(dataref);
+    test_data as *mut _
 }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn XPLMUnregisterDataAccessor(dr: XPLMDataRef) {
+    assert!(!dr.is_null());
     let dr = dr as *const TestData;
     let dr = unsafe { dr.as_ref().unwrap() };
     let name = dr.name.clone();
 
     let mut datarefs = STUB_DATAREFS.lock().unwrap();
-    datarefs.get_or_insert_with(create_test_drs).remove(&name);
+    let datarefs = datarefs.get_or_insert_with(create_test_drs);
+    assert!(datarefs.contains_key(&name));
+    datarefs.remove(&name);
 }
