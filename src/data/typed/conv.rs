@@ -53,6 +53,7 @@ macro_rules! uom_typed_dataref {
             use $crate::data::typed::{InputUnitConversion, OutputUnitConversion};
             use $crate::data::typed::borrowed::TypedDataRef;
             use $crate::data::typed::owned::TypedOwnedData;
+            use $crate::data::DataType;
 
             #[derive(Copy, Clone, Debug)]
             pub struct Conv {}
@@ -67,9 +68,7 @@ macro_rules! uom_typed_dataref {
                 $unit_name: ::uom::Conversion<V, T = V>,
             {
                 type Error = InvalidValueError;
-                fn try_conv_in(value: V) -> Result<
-                    $($uom_type)::*<SI<V>, V>, Self::Error
-                > {
+                fn try_conv_in(value: V) -> Result<$($uom_type)::*<SI<V>, V>, Self::Error> {
                     (value > V::from($minval) && value < V::from($maxval))
                         .then(|| $($uom_type)::*::new::<$unit_name>(value))
                         .ok_or(InvalidValueError {})
@@ -87,17 +86,29 @@ macro_rules! uom_typed_dataref {
             }
             #[allow(dead_code)]
             pub type DataRef<V, A = $crate::data::ReadOnly> =
-                TypedDataRef<V, $($uom_type)::*<SI<V>, V>, Conv, A>;
+                TypedDataRef<
+                    V,
+                    $($uom_type)::*<SI<<V as DataType>::Validation>, <V as DataType>::Validation>,
+                    Conv,
+                    A,
+                >;
             #[allow(dead_code)]
             pub type OwnedData<V, A = $crate::data::ReadOnly> =
-                TypedOwnedData<V, $($uom_type)::*<SI<V>, V>, Conv, A>;
+                TypedOwnedData<
+                    V,
+                    $($uom_type)::*<SI<<V as DataType>::Validation>, <V as DataType>::Validation>,
+                    Conv,
+                    A,
+                >;
         }
     };
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::data::typed::{TypedDataRead, TypedDataReadWrite};
+    use crate::data::typed::{
+        TypedArrayRead, TypedArrayReadWrite, TypedDataRead, TypedDataReadWrite,
+    };
     use uom::si::{
         f32::ThermodynamicTemperature,
         thermodynamic_temperature::{degree_celsius, kelvin},
@@ -132,6 +143,19 @@ mod tests {
 
         let mut dr_owned =
             temperature_celsius::OwnedData::<f32>::create("test/owned/temp_cel").unwrap();
-        dr_owned.set(ThermodynamicTemperature::new::<degree_celsius>(5.0));
+        dr_owned.set(ThermodynamicTemperature::new::<degree_celsius>(100.0));
+        assert_eq!(
+            dr_owned.get().unwrap(),
+            ThermodynamicTemperature::new::<kelvin>(373.15)
+        );
+
+        let mut dr_owned_array =
+            temperature_celsius::OwnedData::<[f32]>::create("test/owned/temp_cel_array", 2)
+                .unwrap();
+        dr_owned_array.set([ThermodynamicTemperature::new::<degree_celsius>(100.0); 2].into_iter());
+        assert_eq!(
+            dr_owned_array.get().unwrap(),
+            [ThermodynamicTemperature::new::<kelvin>(373.15); 2],
+        );
     }
 }
