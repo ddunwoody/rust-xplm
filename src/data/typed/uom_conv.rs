@@ -43,9 +43,9 @@
 #[macro_export]
 macro_rules! uom_typed_dataref {
     (
-        $modname:ident,
-        uom: $(::)?$($uom_type:ident)::+,
-        phys_unit: $unit_name:ty,
+        name: $modname:ident,
+        type: $(::)?$($uom_type:ident)::+,
+        unit: $unit_name:ty,
         range: ($minval:literal..$maxval:literal),
     ) => {
         pub mod $modname {
@@ -115,9 +115,9 @@ mod tests {
     };
 
     uom_typed_dataref!(
-        temperature_celsius,
-        uom: uom::si::thermodynamic_temperature::ThermodynamicTemperature,
-        phys_unit: uom::si::thermodynamic_temperature::degree_celsius,
+        name: temperature_celsius,
+        type: uom::si::thermodynamic_temperature::ThermodynamicTemperature,
+        unit: uom::si::thermodynamic_temperature::degree_celsius,
         range: (-273.15_f32..5000_f32),
     );
 
