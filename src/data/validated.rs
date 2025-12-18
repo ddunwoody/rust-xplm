@@ -303,10 +303,6 @@ pub mod validator {
         /// `FpCategory::Normal`).
         #[error("number {0} is not a normal floating point number")]
         NotNormal(T),
-        /// The number is not positive. This has to be a separate enum, because
-        /// Rust's std::ops::RangeBounds lacks a left-exclusive range variant.
-        #[error("number {0} is not positive")]
-        NotPositive(T),
         /// The number does not fall within the required range.
         #[error("number {0} is not in the required range {1}")]
         NotInRange(T, RangeAny<T>),
