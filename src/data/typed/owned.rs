@@ -169,7 +169,7 @@ mod tests {
         let mut dr_array =
             TypedOwnedData::<[u32], ValidValues, ValidValuesConv>::create("test/new/u32_3", 2)
                 .unwrap();
-        dr_array.set_subdata([ValidValues::C; 1].into_iter(), 1);
+        dr_array.set_subdata(&[ValidValues::C], 1);
         assert_eq!(dr_array.get().unwrap(), [ValidValues::A, ValidValues::C]);
     }
 }

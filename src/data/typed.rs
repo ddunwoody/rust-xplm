@@ -96,10 +96,10 @@ where
     X: ArrayType + ?Sized,
     C: OutputUnitConversion<R, X::Validation>,
 {
-    fn set(&mut self, values: impl Iterator<Item = R>) {
+    fn set(&mut self, values: &[R]) {
         self.set_subdata(values, 0);
     }
-    fn set_subdata(&mut self, values: impl Iterator<Item = R>, offset: usize);
+    fn set_subdata(&mut self, values: &[R], offset: usize);
 }
 
 macro_rules! impl_typed_data {
@@ -131,8 +131,11 @@ macro_rules! impl_typed_data {
             C: OutputUnitConversion<R, $native_type>,
             Dref: ArrayReadWrite<[$native_type]>,
         {
-            fn set_subdata(&mut self, values: impl Iterator<Item = R>, start_offset: usize) {
-                let values = values.map(|value| C::conv_out(&value)).collect::<Vec<_>>();
+            fn set_subdata(&mut self, values: &[R], start_offset: usize) {
+                let values = values
+                    .iter()
+                    .map(|value| C::conv_out(value))
+                    .collect::<Vec<_>>();
                 self.dr.set_subdata(&values, start_offset);
             }
         }

@@ -122,7 +122,7 @@ mod tests {
                 .writeable()
                 .unwrap();
         let en = ValidValues::C;
-        array_dr.set(std::iter::once(en));
+        array_dr.set(&[en]);
         let en_out = array_dr.get_subdata(0..1).unwrap();
         assert_eq!(en_out, vec![ValidValues::C]);
     }

@@ -154,7 +154,7 @@ mod tests {
         let mut dr_owned_array =
             temperature_celsius::OwnedData::<[f32]>::create("test/owned/temp_cel_array", 2)
                 .unwrap();
-        dr_owned_array.set([ThermodynamicTemperature::new::<degree_celsius>(0.0); 2].into_iter());
+        dr_owned_array.set(&[ThermodynamicTemperature::new::<degree_celsius>(0.0); 2]);
         assert_eq!(
             dr_owned_array.get().unwrap(),
             [ThermodynamicTemperature::new::<kelvin>(273.15); 2],
