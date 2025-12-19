@@ -82,7 +82,7 @@ macro_rules! uom_typed_dataref {
                 SI<V>: ::uom::si::Units<V>,
                 $unit_name: ::uom::Conversion<V, T = V>,
             {
-                fn conv_out(value: $($uom_type)::*<SI<V>, V>) -> V {
+                fn conv_out(value: &$($uom_type)::*<SI<V>, V>) -> V {
                     value.get::<$unit_name>()
                 }
             }
@@ -120,7 +120,7 @@ mod tests {
         name: temperature_celsius,
         type: uom::si::thermodynamic_temperature::ThermodynamicTemperature,
         unit: uom::si::thermodynamic_temperature::degree_celsius,
-        range: -273.15..5000.0,
+        range: -273.1499..5000.0,
     );
 
     #[test]

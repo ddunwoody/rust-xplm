@@ -55,7 +55,7 @@ pub trait InputUnitConversion<X, R> {
 }
 
 pub trait OutputUnitConversion<R, X> {
-    fn conv_out(value: R) -> X;
+    fn conv_out(value: &R) -> X;
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -120,7 +120,7 @@ macro_rules! impl_typed_data {
             Dref: DataReadWrite<$native_type>,
         {
             fn set(&mut self, value: R) {
-                self.dr.set(C::conv_out(value));
+                self.dr.set(C::conv_out(&value));
             }
         }
     };
@@ -132,7 +132,7 @@ macro_rules! impl_typed_data {
             Dref: ArrayReadWrite<[$native_type]>,
         {
             fn set_subdata(&mut self, values: impl Iterator<Item = R>, start_offset: usize) {
-                let values = values.map(|value| C::conv_out(value)).collect::<Vec<_>>();
+                let values = values.map(|value| C::conv_out(&value)).collect::<Vec<_>>();
                 self.dr.set_subdata(&values, start_offset);
             }
         }

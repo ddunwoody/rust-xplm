@@ -85,7 +85,7 @@ mod tests {
     fn test_typed_dataref() {
         let _dr_lock = crate::test_stubs::DATAREF_SYS_LOCK.lock();
 
-        #[derive(derive_more::TryFrom, PartialEq, Eq, Debug)]
+        #[derive(Copy, Clone, derive_more::TryFrom, PartialEq, Eq, Debug)]
         #[try_from(repr)]
         #[repr(i32)]
         enum ValidValues {
@@ -101,8 +101,8 @@ mod tests {
             }
         }
         impl OutputUnitConversion<ValidValues, i32> for ValidValuesConv {
-            fn conv_out(value: ValidValues) -> i32 {
-                value as _
+            fn conv_out(value: &ValidValues) -> i32 {
+                *value as _
             }
         }
 

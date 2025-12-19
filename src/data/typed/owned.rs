@@ -59,7 +59,7 @@ where
         R: Default,
         C: super::OutputUnitConversion<R, X>,
     {
-        let v = C::conv_out(R::default());
+        let v = C::conv_out(&R::default());
         Ok(Self {
             dr: OwnedData::create_with_value(name, &v)?,
             data: PhantomData,
@@ -73,7 +73,7 @@ where
         C: super::OutputUnitConversion<R, X>,
     {
         Ok(Self {
-            dr: OwnedData::create_with_value(name, &C::conv_out(value))?,
+            dr: OwnedData::create_with_value(name, &C::conv_out(&value))?,
             data: PhantomData,
             rust_type: PhantomData,
             conv: PhantomData,
@@ -92,7 +92,7 @@ where
         R: Default,
         C: super::OutputUnitConversion<R, X>,
     {
-        let v = C::conv_out(R::default());
+        let v = C::conv_out(&R::default());
         let values = vec![v; len];
         Ok(Self {
             dr: OwnedData::create_with_value(name, &values[..])?,
@@ -102,14 +102,14 @@ where
         })
     }
     /// Creates a new dataref with the provided name and value
-    pub fn create_with_value(
-        name: &str,
-        values: impl Iterator<Item = R>,
-    ) -> Result<Self, CreateError>
+    pub fn create_with_value(name: &str, values: &[R]) -> Result<Self, CreateError>
     where
         C: super::OutputUnitConversion<R, X>,
     {
-        let values = values.map(|value| C::conv_out(value)).collect::<Vec<_>>();
+        let values = values
+            .iter()
+            .map(|value| C::conv_out(value))
+            .collect::<Vec<_>>();
         Ok(Self {
             dr: OwnedData::create_with_value(name, &values[..])?,
             data: PhantomData,
@@ -150,8 +150,8 @@ mod tests {
             }
         }
         impl OutputUnitConversion<ValidValues, u32> for ValidValuesConv {
-            fn conv_out(value: ValidValues) -> u32 {
-                value as _
+            fn conv_out(value: &ValidValues) -> u32 {
+                *value as _
             }
         }
         let mut dr_ro =
