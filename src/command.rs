@@ -38,7 +38,7 @@ impl Command {
     /// Starts holding down this command
     ///
     /// The command will be released when the returned hold object is dropped.
-    pub fn hold_down(&mut self) -> CommandHold {
+    pub fn hold_down(&mut self) -> CommandHold<'_> {
         unsafe {
             XPLMCommandBegin(self.id);
         }

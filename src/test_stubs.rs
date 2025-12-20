@@ -40,6 +40,8 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
+#![allow(clippy::missing_safety_doc)]
+
 use core::slice;
 use std::{
     collections::HashMap,
@@ -51,11 +53,11 @@ use std::{
 use xplm_sys::{
     xplmType_Data, xplmType_Double, xplmType_Float, xplmType_FloatArray, xplmType_Int,
     xplmType_IntArray, XPLMDataRef, XPLMDataTypeID, XPLMGetDatab_f, XPLMGetDatad_f, XPLMGetDataf_f,
-    XPLMGetDatai_f, XPLMGetDatavf_f, XPLMGetDatavi_f, XPLMSetDatab_f, XPLMSetDatad_f,
-    XPLMSetDataf_f, XPLMSetDatai_f, XPLMSetDatavf_f, XPLMSetDatavi_f,
+    XPLMGetDatai_f, XPLMGetDatavf_f, XPLMGetDatavi_f, XPLMPluginID, XPLMSetDatab_f, XPLMSetDatad_f,
+    XPLMSetDataf_f, XPLMSetDatai_f, XPLMSetDatavf_f, XPLMSetDatavi_f, XPLM_NO_PLUGIN_ID,
 };
 
-pub(crate) static DATAREF_SYS_LOCK: Mutex<()> = Mutex::new(());
+pub static DATAREF_SYS_LOCK: Mutex<()> = Mutex::new(());
 
 static STUB_DATAREFS: Mutex<Option<HashMap<CString, Pin<Box<TestData>>>>> = Mutex::new(None);
 
@@ -102,7 +104,7 @@ unsafe impl Send for TestDataRef {}
 
 fn create_test_drs() -> HashMap<CString, Pin<Box<TestData>>> {
     macro_rules! make_dataref {
-        ($map:expr, $name:literal, $variant:ident, $payload:expr) => {
+        ($map:expr, $name:literal, $variant:ident, $payload:expr$(,)?) => {
             $map.insert(
                 $name.into(),
                 Box::pin(TestData {
@@ -120,6 +122,13 @@ fn create_test_drs() -> HashMap<CString, Pin<Box<TestData>>> {
     make_dataref!(map, c"test/i32array", OwnedI32Array, [0; TEST_ARRAY_LEN]);
     make_dataref!(map, c"test/f32array", OwnedF32Array, [0.0; TEST_ARRAY_LEN]);
     make_dataref!(map, c"test/bytearray", OwnedByteArray, [0; TEST_ARRAY_LEN]);
+    make_dataref!(map, c"sim/aircraft/autopilot/dg_source", OwnedI32, 10);
+    make_dataref!(
+        map,
+        c"sim/flightmodel/engine/ENGN_propmode",
+        OwnedI32Array,
+        [0; TEST_ARRAY_LEN],
+    );
     map
 }
 
@@ -405,3 +414,13 @@ pub extern "C" fn XPLMUnregisterDataAccessor(dr: XPLMDataRef) {
     assert!(datarefs.contains_key(&name));
     datarefs.remove(&name);
 }
+
+// Used by the DRE/DRT notification logic in datarefs. Don't return anything.
+#[unsafe(no_mangle)]
+pub extern "C" fn XPLMFindPluginBySignature(_: *const c_char) -> XPLMPluginID {
+    XPLM_NO_PLUGIN_ID
+}
+
+// Used by the DRE/DRT notification logic in datarefs. Ignore the message.
+#[unsafe(no_mangle)]
+pub extern "C" fn XPLMSendMessageToPlugin(_: XPLMPluginID, _: c_int, _: *mut c_void) {}

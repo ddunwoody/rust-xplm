@@ -49,15 +49,27 @@ pub mod owned;
 #[cfg(feature = "uom_conv")]
 pub mod uom_conv;
 
+/// Trait which must be implemented by the conversion type to be able to read from typed datarefs
+/// and convert them into the associated data type.
 pub trait InputUnitConversion<X, R> {
     type Error;
     fn try_conv_in(value: X) -> Result<R, Self::Error>;
 }
 
+/// Trait which must be implemented by the conversion type to be able to write to typed datarefs
+/// and convert the associated data type into the payload in the dataref.
 pub trait OutputUnitConversion<R, X> {
     fn conv_out(value: &R) -> X;
 }
 
+/// This encapsulates a dataref (either owned or borrowed), which provides type-safe access
+/// mechanisms for ingesting and outputting Rust data types. This way you can write a
+/// non-primitive data type into a dataref, and have the conversion + validation happen
+/// automatically.
+///
+/// For convenience, it is easiest to use the canned types for either borrowed (`TypedDataRef`)
+/// or owned (`TypedOwnedData`) datarefs. Please see those types for examples on how to use
+/// them.
 #[derive(Copy, Clone, Debug)]
 pub struct TypedData<X: ?Sized, R, Conversion, Dref> {
     dr: Dref,

@@ -46,6 +46,79 @@ use crate::data::{Access, ArrayType, DataType};
 
 use std::marker::PhantomData;
 
+/// An owned dataref, which includes type, conversion and validation information. This
+/// lets you read/write datarefs using non-primitive Rust types and have the system
+/// automatically convert between the Rust and XPLM data types as necessary. On read-back
+/// validation is performed, to make sure the conversion is successful.
+///
+/// This type takes the following 4 generic type arguments:
+///
+/// - `X` - the X-Plane native data type. This must be one of:
+///   - `bool`
+///   - `i8` or `u8`
+///   - `i16` or `u16`
+///   - `i32` or `u32`
+///   - `f32`
+///   - `f64`
+///   - `[bool]`
+///   - `[i8]` or `[u8]`
+///   - `[i32]` or `[u32]`
+///   - `[f32]`
+/// - `R` - the Rust type, which we will convert into/out of when writing the dataref.
+/// - `C` - the Conversion type. This type must implement `xplm::data::typed::InputDataConversion`
+///   to enable reading the dataref, and `xplm::data::typed::OutputDataConversion` to enable
+///   writing to it.
+/// - `A` - an optional access argument. Must be either `ReadOnly` (the default), or `ReadWrite`.
+///   Please note that owned datarefs are always writable by *us*, since we own the data.
+///   This type argument instead denotes whether the dataref should be writable to other
+///   plugins.
+///
+/// # Example Enum Owned DataRef Read & Write
+/// ```no_run
+/// use xplm::data::ReadWrite;
+/// use xplm::data::typed::owned::TypedOwnedData;
+/// use xplm::data::typed::{TypedDataRead, TypedDataReadWrite};
+/// use xplm::data::typed::{InputUnitConversion, OutputUnitConversion};
+/// // Create the dataref and populate it with the default value of MyEnum. This can fail
+/// // if the dataref already exists.
+/// let mut my_dr = TypedOwnedData::<i32, MyEnum, MyEnum>::create("my/enumdata").unwrap();
+/// #[derive(Copy, Clone, Debug, Default)]
+/// enum MyEnum {
+///     ValueA = 0,
+///     #[default]
+///     ValueB = 1,
+///     ValueC = 2,
+/// }
+/// // Implement the necessary traits for MyEnum to enable the typed dataref
+/// // to perform the input/output conversion and validation.
+/// #[derive(Debug)]
+/// struct InvalidMyEnum(i32);
+/// impl InputUnitConversion<i32, MyEnum> for MyEnum {
+///     type Error = InvalidMyEnum;
+///     fn try_conv_in(value: i32) -> Result<MyEnum, Self::Error> {
+///         match value {
+///             x if x == MyEnum::ValueA as i32 => Ok(MyEnum::ValueA),
+///             x if x == MyEnum::ValueB as i32 => Ok(MyEnum::ValueB),
+///             x if x == MyEnum::ValueC as i32 => Ok(MyEnum::ValueC),
+///             _ => Err(InvalidMyEnum(value)),
+///         }
+///     }
+/// }
+/// impl OutputUnitConversion<MyEnum, i32> for MyEnum {
+///     fn conv_out(value: &MyEnum) -> i32 {
+///         *value as i32
+///     }
+/// }
+/// // We can now read and write `MyEnum' enums directly to/from the dataref:
+/// match my_dr.get() {
+///     Ok(my_enum) => assert!(matches!(my_enum, MyEnum::ValueB)),
+///     Err(e) => println!("got invalid MyEnum value: {}", e.0),
+/// }
+/// my_dr.set(MyEnum::ValueC);
+/// assert!(!matches!(my_dr.get().unwrap(), MyEnum::ValueA));
+/// assert!(!matches!(my_dr.get().unwrap(), MyEnum::ValueB));
+/// assert!(matches!(my_dr.get().unwrap(), MyEnum::ValueC));
+/// ```
 pub type TypedOwnedData<X, R, C, A = ReadOnly> = super::TypedData<X, R, C, OwnedData<X, A>>;
 
 impl<X, R, C, A> TypedOwnedData<X, R, C, A>
@@ -53,7 +126,9 @@ where
     X: DataType,
     A: Access,
 {
-    /// Creates a new dataref with the provided name containing the default value of T
+    /// Creates a new dataref with the provided name containing the default value of `R`.
+    /// This function is invoked for single-element (non-array) owned datarefs. The Rust
+    /// type `R` associated with this dataref must implement the `Default` trait.
     pub fn create(name: &str) -> Result<Self, CreateError>
     where
         R: Default,
@@ -67,7 +142,8 @@ where
             conv: PhantomData,
         })
     }
-    /// Creates a new dataref with the provided name and value
+    /// Creates a new dataref with the provided name and value. This function is invoked
+    /// for single-element (non-array) owned datarefs.
     pub fn create_with_value(name: &str, value: R) -> Result<Self, CreateError>
     where
         C: super::OutputUnitConversion<R, X>,
@@ -86,6 +162,9 @@ where
     [X]: ArrayType,
     A: Access,
 {
+    /// Creates a new dataref with the provided name containing an array of `R`, of
+    /// length `len`. The Rust type `R` associated with this dataref must implement
+    /// the `Default` and `Clone` traits.
     pub fn create(name: &str, len: usize) -> Result<Self, CreateError>
     where
         X: Clone,
@@ -101,7 +180,7 @@ where
             conv: PhantomData,
         })
     }
-    /// Creates a new dataref with the provided name and value
+    /// Creates a new dataref with the provided name and values.
     pub fn create_with_value(name: &str, values: &[R]) -> Result<Self, CreateError>
     where
         C: super::OutputUnitConversion<R, X>,

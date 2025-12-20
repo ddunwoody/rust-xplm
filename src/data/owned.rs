@@ -67,7 +67,6 @@ impl<T: DataType + ?Sized, A: Access> OwnedData<T, A> {
             )
         };
 
-        #[cfg(not(test))]
         Self::notify_dre_plugin(&name_c);
 
         assert!(!id.is_null());
@@ -78,7 +77,8 @@ impl<T: DataType + ?Sized, A: Access> OwnedData<T, A> {
         })
     }
 
-    #[cfg(not(test))]
+    // Notifies DataRefEditor or DataRefTool of the new dataref by sending an inter-plugin
+    // message containing the new dataref name.
     fn notify_dre_plugin(name_c: &std::ffi::CStr) {
         use std::cell::OnceCell;
         use std::sync::Mutex;
