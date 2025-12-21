@@ -78,6 +78,8 @@ pub struct TypedData<X: ?Sized, R, Conversion, Dref> {
     conv: PhantomData<Conversion>,
 }
 
+/// This trait is implemented by typed datarefs to read scalar data and convert it into
+/// Rust-native types.
 pub trait TypedDataRead<X, R, C>
 where
     C: InputUnitConversion<X, R>,
@@ -85,6 +87,8 @@ where
     fn get(&self) -> Result<R, C::Error>;
 }
 
+/// This trait is implemented by typed datarefs to convert a Rust-native type into a
+/// dataref-compatible scalar data type and write it to the scalar dataref.
 pub trait TypedDataReadWrite<X, R, C>
 where
     C: OutputUnitConversion<R, X>,
@@ -92,25 +96,44 @@ where
     fn set(&mut self, value: R);
 }
 
+/// This trait is implemented by typed datarefs to read array data and convert it into
+/// a vector of Rust-native types.
 pub trait TypedArrayRead<X, R, C>
 where
     X: ArrayType + ?Sized,
     C: InputUnitConversion<X::Validation, R>,
 {
+    /// Reads all elements of the array dataref and converts it into Rust-native types.
+    /// If any of the data elements fails validation, this function returns that error
+    /// instead of any of the elements. This is equivalent to calling `.get_subdata(..)`
+    /// on the dataref.
     fn get(&self) -> Result<Vec<R>, C::Error> {
         self.get_subdata(..)
     }
+    /// Returns only a given range of Rust-native typed data from the array dataref.
+    /// If any of the data elements fails validation, this function returns that error
+    /// instead of any of the elements.
     fn get_subdata(&self, range: impl std::ops::RangeBounds<usize>) -> Result<Vec<R>, C::Error>;
 }
 
+/// This trait is implemented by typed datarefs to convert a slice of Rust-native data
+/// into a dataref-compatible data type and write it to the array dataref.
 pub trait TypedArrayReadWrite<X, R, C>
 where
     X: ArrayType + ?Sized,
     C: OutputUnitConversion<R, X::Validation>,
 {
+    /// Writes all elements of the array dataref from Rust-native types in the provided slice.
+    /// If the provided slice contains fewer elements than the length of the array, only those
+    /// elements for which we have data are overwritten. Conversely, if the slice contains
+    /// more elements than the length of the array dataref, excess elements are discarded.
     fn set(&mut self, values: &[R]) {
         self.set_subdata(values, 0);
     }
+    /// Writes a subset of elements in the array dataref starting at `offset` and fills it with
+    /// the Rust-native types in the provided slice. If the slice contains more elements than
+    /// the length of the array dataref following the specified `offset`, excess elements are
+    /// discarded.
     fn set_subdata(&mut self, values: &[R], offset: usize);
 }
 
