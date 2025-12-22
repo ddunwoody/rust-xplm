@@ -65,13 +65,13 @@ use std::marker::PhantomData;
 ///   - `[i32]` or `[u32]`
 ///   - `[f32]`
 /// - `R` - the Rust type, which we will convert into/out of when writing the dataref.
-/// - `C` - the Conversion type. This type must implement `xplm::data::typed::InputDataConversion`
-///   to enable reading the dataref, and `xplm::data::typed::OutputDataConversion` to enable
-///   writing to it.
-/// - `A` - an optional access argument. Must be either `ReadOnly` (the default), or `ReadWrite`.
-///   Please note that owned datarefs are always writable by *us*, since we own the data.
-///   This type argument instead denotes whether the dataref should be writable to other
-///   plugins.
+/// - `C` - the Conversion type. This type must implement
+///   [`crate::data::typed::InputUnitConversion`] to enable reading the dataref, and
+///   [`crate::data::typed::OutputUnitConversion`] to enable writing to it.
+/// - `A` - an optional access argument. Must be either [`crate::data::ReadOnly`] (the
+///   default), or [`crate::data::ReadWrite`]. Please note that owned datarefs are always
+///   writable by *us*, since we own the data. This type argument instead denotes whether
+///   the dataref should be writable by other plugins.
 ///
 /// # Example Enum Owned DataRef Read & Write
 /// ```no_run
@@ -163,7 +163,7 @@ where
     A: Access,
 {
     /// Creates a new dataref with the provided name containing an array of `R`, of
-    /// length `len`. The Rust type `R` associated with this dataref must implement
+    /// length `len`. The Rust type `R`  associated with this dataref must implement
     /// the `Default` and `Clone` traits.
     pub fn create(name: &str, len: usize) -> Result<Self, CreateError>
     where

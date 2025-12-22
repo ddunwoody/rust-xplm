@@ -49,6 +49,41 @@ use crate::data::{
 
 use super::{ValidatedArrayRead, ValidatedData, ValidatedDataRead};
 
+/// A dataref created by X-Plane or another plugin, with support for flexible input/output
+/// validators.
+///
+/// # Example
+/// ```no_run
+/// use xplm::data::ReadWrite;
+/// use xplm::data::validated::{validator, ValidatedDataRead, ValidatedDataReadWrite};
+/// use xplm::data::validated::borrowed::ValidatedDataRef;
+///
+/// // Create a numerical range checker using the provided `RangeInclusive` validator
+/// // (requires the `number_validation` feature be enable).
+/// // NOTE: you can combine multiple validators together using the `validator::And` and
+/// // `validator::Or` meta-validators.
+/// type CheckRangeA = validator::RangeInclusive<0, 10>;
+///
+/// // Look up the dataref and associate it with the range checker.
+/// let mut dr: ValidatedDataRef<i32, CheckRangeA, ReadWrite> =
+///     ValidatedDataRef::find("test/i32")
+///         .unwrap()
+///         .writeable()
+///         .unwrap();
+///
+/// // We can now attempt to read the dataref. The returned data will first be
+/// // validated by the range checker.
+/// match dr.get() {
+///     Ok(value) => println!("Read dataref value {value}"),
+///     Err(e) => println!("Reading dataref failed due to input validation error: {e:?}"),
+/// }
+///
+/// // We can try to set something into the dataref. The validator will check that our
+/// // input conforms to the criteria.
+/// assert!(dr.set(7).is_ok());
+/// // If we try to put something invalid into the dataref, we'll get an error.
+/// assert!(dr.set(1000).is_err());
+/// ```
 pub type ValidatedDataRef<T, V, A = ReadOnly> = ValidatedData<T, V, DataRef<T, A>>;
 
 impl<T, V> ValidatedDataRef<T, V, ReadOnly>
@@ -56,9 +91,10 @@ where
     T: DataType + ?Sized,
     V: super::Validator<T::Validation>,
 {
-    pub fn find<S: AsRef<str>>(name: S) -> Result<Self, FindError> {
+    /// Performs a lookup for this dataref and returns it if found, or an error otherwise.
+    pub fn find(name: &str) -> Result<Self, FindError> {
         Ok(Self {
-            dr: DataRef::find(name.as_ref())?,
+            dr: DataRef::find(name)?,
             data: PhantomData,
             validator: PhantomData,
         })

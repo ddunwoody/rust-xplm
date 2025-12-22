@@ -44,9 +44,13 @@ use std::marker::PhantomData;
 
 use super::{ArrayReadWrite, ArrayType, DataReadWrite, DataType};
 
+/// Datarefs created by X-Plane or other plugins.
 pub mod borrowed;
+
+/// Datarefs created by this plugin.
 pub mod owned;
 
+/// Must be implemented by scalar datarefs which provide validation on read.
 pub trait ValidatedDataRead<T, V>
 where
     T: super::DataType,
@@ -55,6 +59,8 @@ where
     fn get(&self) -> Result<T, V::Error>;
 }
 
+/// Must be implemented by scalar datarefs which provide validation on write.
+/// Read-only datarefs need not implement this trait.
 pub trait ValidatedDataReadWrite<T, V>
 where
     T: DataType,
@@ -63,6 +69,7 @@ where
     fn set(&mut self, value: T) -> Result<(), V::Error>;
 }
 
+/// Must be implemented by array datarefs which provide validation on read.
 #[allow(clippy::len_without_is_empty)]
 pub trait ValidatedArrayRead<T, V>
 where
@@ -79,6 +86,8 @@ where
     fn len(&self) -> usize;
 }
 
+/// Must be implemented by array datarefs which provide validation on write.
+/// Read-only datarefs need not implement this trait.
 pub trait ValidatedArrayReadWrite<T, V>
 where
     T: ArrayType + ?Sized,
@@ -94,9 +103,12 @@ where
 /// This can be used to avoid attempting to write junk into the dataref system, or
 /// consuming junk written by somebody else.
 ///
-/// This works the same as a normal DataRef struct, except the second generic
-/// argument must be a struct which implements the `Validator` trait. See
-/// `crate::data::validator` for a list of ready-to-use data validators.
+/// This works the same as a normal [`crate::data::borrowed::DataRef`] struct, except the
+/// second generic argument must be a struct which implements the `Validator` trait. See
+/// [`crate::data::validated::validator`] for a list of ready-to-use data validators.
+/// NOTE: you can combine multiple validators into logical structures using the
+/// [`crate::data::validated::validator::And`] and [`crate::data::validated::validator::Or`]
+/// meta-validators.
 #[derive(Copy, Clone, Debug)]
 pub struct ValidatedData<T, V, Dref>
 where
@@ -172,9 +184,12 @@ pub trait Validator<T: ?Sized> {
     fn validate(data: &T) -> Result<(), Self::Error>;
 }
 
+/// Additional generic Range types implementing the `std::ops::RangeBounds` trait.
 pub mod range {
     use std::fmt;
 
+    /// A range which is exclusive both for the start and end bound. This has no
+    /// direct analog in Rust's standard range syntax.
     #[derive(Clone, Hash, PartialEq, Eq)]
     pub struct RangeExclusive<T> {
         pub start: T,
@@ -188,7 +203,7 @@ pub mod range {
             std::ops::Bound::Excluded(&self.end)
         }
     }
-    impl<Idx: fmt::Debug> fmt::Debug for RangeExclusive<Idx> {
+    impl<T: fmt::Debug> fmt::Debug for RangeExclusive<T> {
         fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(fmt, ">")?;
             self.start.fmt(fmt)?;
@@ -198,6 +213,8 @@ pub mod range {
         }
     }
 
+    /// A range with an exclusive start bound and no end bound. This has no
+    /// direct analog in Rust's standard range syntax.
     #[derive(Clone, Hash, PartialEq, Eq)]
     pub struct RangeFromExclusive<T> {
         pub start: T,
@@ -210,7 +227,7 @@ pub mod range {
             std::ops::Bound::Unbounded
         }
     }
-    impl<Idx: fmt::Debug> fmt::Debug for RangeFromExclusive<Idx> {
+    impl<T: fmt::Debug> fmt::Debug for RangeFromExclusive<T> {
         fn fmt(&self, fmt: &mut fmt::Formatter<'_>) -> fmt::Result {
             write!(fmt, ">")?;
             self.start.fmt(fmt)?;
@@ -220,6 +237,8 @@ pub mod range {
     }
 }
 
+/// Pre-made validators which you can use with `ValidatedOwnedData` and `ValidateDataRef`
+/// to perform automatic input/output validation.
 pub mod validator {
     use std::marker::PhantomData;
     #[cfg(feature = "number_validation")]
@@ -230,16 +249,22 @@ pub mod validator {
     /// Meta-validator which allows you to combine multiple validators. This
     /// validator returns success if both subvalidations succeed. For example
     /// to validate a dataref fits within the overlap of two numerical ranges:
-    /// ```
+    /// ```no_run
     /// use xplm::data::validated::{validator, Validator};
+    /// use xplm::data::validated::borrowed::ValidatedDataRef;
+    ///
+    /// // Check the numerical value of the dataref is within the range 0..=10 AND 5..
     /// type CheckRangeA = validator::RangeInclusive<0, 10>;
     /// type CheckRangeB = validator::RangeFrom<5>;
     /// type CombinedCheck = validator::And<i32, CheckRangeA, CheckRangeB>;
-    /// // let dr: ValidatedDataRef<i32, CombinedCheck> = ValidatedDataRef::find("test");
+    ///
+    /// let dr: ValidatedDataRef<i32, CombinedCheck> = ValidatedDataRef::find("test").unwrap();
+    ///
     /// assert!(CombinedCheck::validate(&4).is_err());  // Just outside of 5..
     /// assert!(CombinedCheck::validate(&5).is_ok());   // Just within both ranges
     /// assert!(CombinedCheck::validate(&10).is_ok());  // Just within both ranges
     /// assert!(CombinedCheck::validate(&11).is_err()); // Just outside of 0..=10
+    ///
     /// // Floating point data is also supported, but due to const generic argument
     /// // limits, ranges can only be specified as integers.
     /// type CombinedCheckF32 = validator::And<f32, CheckRangeA, CheckRangeB>;
@@ -268,12 +293,17 @@ pub mod validator {
     /// Meta-validator which allows you to combine multiple validators. This
     /// validator returns success if either subvalidation succeeds. For example
     /// to validate a dataref fits within one of two separate ranges:
-    /// ```
+    /// ```no_run
     /// use xplm::data::validated::{validator, Validator};
+    /// use xplm::data::validated::borrowed::ValidatedDataRef;
+    ///
+    /// // Check the numerical value of the dataref is either 0..=5 OR 10..
     /// type CheckRangeA = validator::RangeInclusive<0, 5>;
     /// type CheckRangeB = validator::RangeFrom<10>;
     /// type CombinedCheck = validator::Or<i32, CheckRangeA, CheckRangeB>;
-    /// // let dr: ValidatedDataRef<i32, CombinedCheck> = ValidatedDataRef::find("test");
+    ///
+    /// let dr: ValidatedDataRef<i32, CombinedCheck> = ValidatedDataRef::find("test").unwrap();
+    ///
     /// assert!(CombinedCheck::validate(&5).is_ok());   // Within first range (0..=5)
     /// assert!(CombinedCheck::validate(&10).is_ok());  // Within second range (10..)
     /// assert!(CombinedCheck::validate(&-1).is_err()); // Within neither range
@@ -298,6 +328,11 @@ pub mod validator {
 
     /// Validation error for numbers. This error enum is returned from the various
     /// numeric validators in this module.
+    /// <div class="warning">
+    ///
+    /// Requires the `number_validation` feature.
+    ///
+    /// </div>
     #[cfg(feature = "number_validation")]
     #[derive(Clone, Debug, thiserror::Error)]
     pub enum NumberValidationError<T> {
@@ -313,6 +348,11 @@ pub mod validator {
 
     /// Validator for floating point numbers, which returns success if the number
     /// is classified as a normal number (finite, non-NaN and non-denormal).
+    /// <div class="warning">
+    ///
+    /// Requires the `number_validation` feature.
+    ///
+    /// </div>
     #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct NormalFloat {}
@@ -337,6 +377,11 @@ pub mod validator {
     /// Provides a range validator equivalent to a half-open `START..END` range expression.
     /// The start and end bounds must be specified as generic constants when this type is
     /// used.
+    /// <div class="warning">
+    ///
+    /// Requires the `number_validation` feature.
+    ///
+    /// </div>
     #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct Range<const START: i64, const END: i64> {}
@@ -358,6 +403,11 @@ pub mod validator {
     /// Provides a range validator, where both the start and end bound are open. This
     /// has no direct equivalent in Rust's range expressions. The start and end bounds
     /// must be specified as generic constants when this type is used.
+    /// <div class="warning">
+    ///
+    /// Requires the `number_validation` feature.
+    ///
+    /// </div>
     #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct RangeExclusive<const START: i64, const END: i64> {}
@@ -380,6 +430,11 @@ pub mod validator {
     /// Provides a range validator equivalent to an inclusive `START..=END` Rust range
     /// express. The start and end bounds must be specified as generic constants when
     /// this type is used.
+    /// <div class="warning">
+    ///
+    /// Requires the `number_validation` feature.
+    ///
+    /// </div>
     #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct RangeInclusive<const START: i64, const END: i64> {}
@@ -401,6 +456,11 @@ pub mod validator {
     /// Provides a range validator equivalent to a half-bounded `START..` Rust range
     /// expression. The start and end bounds must be specified as generic constants
     /// when this type is used.
+    /// <div class="warning">
+    ///
+    /// Requires the `number_validation` feature.
+    ///
+    /// </div>
     #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct RangeFrom<const START: i64> {}
@@ -421,6 +481,11 @@ pub mod validator {
     /// Provides a range validator, where the start bound is exclusive and the end
     /// is unbounded. This has no direct equivalent in Rust's range expressions. The
     /// start bound must be specified as a generic constant when this type is used.
+    /// <div class="warning">
+    ///
+    /// Requires the `number_validation` feature.
+    ///
+    /// </div>
     #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct RangeFromExclusive<const START: i64> {}
@@ -442,6 +507,11 @@ pub mod validator {
     /// Provides a range validator equivalent to a half-bounded exclusive `..END`
     /// Rust range expression. The start and end bounds must be specified as
     /// generic constants when this type is used.
+    /// <div class="warning">
+    ///
+    /// Requires the `number_validation` feature.
+    ///
+    /// </div>
     #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct RangeTo<const START: i64> {}
@@ -462,6 +532,11 @@ pub mod validator {
     /// Provides a range validator equivalent to a half-bounded inclusive
     /// `..=END` Rust range expression. The start and end bounds must be
     /// specified as generic constants when this type is used.
+    /// <div class="warning">
+    ///
+    /// Requires the `number_validation` feature.
+    ///
+    /// </div>
     #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct RangeToInclusive<const START: i64> {}
@@ -480,6 +555,13 @@ pub mod validator {
         }
     }
 
+    /// Generic container to allow holding any range value which may be used to
+    /// construct a numerical validator.
+    /// <div class="warning">
+    ///
+    /// Requires the `number_validation` feature.
+    ///
+    /// </div>
     #[cfg(feature = "number_validation")]
     #[derive(Clone, Debug)]
     pub enum RangeAny<T> {

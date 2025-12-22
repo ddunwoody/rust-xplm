@@ -71,7 +71,6 @@ macro_rules! uom_typed_dataref {
                 type Error = InvalidValueError;
                 fn try_conv_in(value: V) -> Result<$($uom_type)::*<SI<V>, V>, Self::Error> {
                     $range.contains(&f64::from(value))
-                    // (value > V::from($minval) && value < V::from($maxval))
                         .then(|| $($uom_type)::*::new::<$unit_name>(value))
                         .ok_or(InvalidValueError {})
                 }

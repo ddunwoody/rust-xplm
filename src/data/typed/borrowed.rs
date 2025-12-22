@@ -66,10 +66,11 @@ use crate::data::{
 ///   - `[i32]` or `[u32]`
 ///   - `[f32]`
 /// - `R` - the Rust type, which we will convert into/out of when writing the dataref.
-/// - `C` - the Conversion type. This type must implement `xplm::data::typed::InputDataConversion`
-///   to enable reading the dataref, and `xplm::data::typed::OutputDataConversion` to enable
-///   writing to it.
-/// - `A` - an optional access argument. Must be either `ReadOnly` (the default), or `ReadWrite`.
+/// - `C` - the Conversion type. This type must implement
+///   [`crate::data::typed::InputUnitConversion`] to enable reading the dataref, and
+///   [`crate::data::typed::OutputUnitConversion`] to enable writing to it.
+/// - `A` - an optional access argument. Must be either [`ReadOnly`] (the default),
+///   or [`ReadWrite`].
 ///
 /// # Example Enum DataRef Read & Write
 /// ```no_run
