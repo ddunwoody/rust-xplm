@@ -21,19 +21,19 @@ jobs:
           rustup update stable
           rustup default stable
           cargo clean
-          cargo build --verbose
+          cargo build --verbose --all-features
       - name: Run tests using rust-stable
         run: |
           source "$HOME/.cargo/env"
-          cargo test --verbose
+          cargo test --verbose --all-features
       - name: Perform build using rust-beta
         run: |
           source "$HOME/.cargo/env"
           rustup update beta
           rustup default beta
           cargo clean
-          cargo build --verbose
+          cargo build --verbose --all-features
       - name: Run tests using rust-beta
         run: |
           source "$HOME/.cargo/env"
-          cargo test --verbose
+          cargo test --verbose --all-features          
