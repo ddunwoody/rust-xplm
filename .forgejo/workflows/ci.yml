@@ -1,0 +1,39 @@
+name: Cargo Build & Test
+on:
+  push:
+
+jobs:
+  build_and_test:
+    name: Rust project - latest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install C build tools
+        run: |
+          apt update
+          apt install -y libclang-dev
+      - name: Install rustup
+        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh /dev/stdin -y
+      - name: Perform build using rust-stable
+        run: |
+          source "$HOME/.cargo/env"
+          rustup update stable
+          rustup default stable
+          cargo clean
+          cargo build --verbose
+      - name: Run tests using rust-stable
+        run: |
+          source "$HOME/.cargo/env"
+          cargo test --verbose
+      - name: Perform build using rust-beta
+        run: |
+          source "$HOME/.cargo/env"
+          rustup update beta
+          rustup default beta
+          cargo clean
+          cargo build --verbose
+      - name: Run tests using rust-beta
+        run: |
+          source "$HOME/.cargo/env"
+          cargo test --verbose
