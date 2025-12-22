@@ -10,9 +10,9 @@ readme = "README.md"
 edition = "2021"
 
 [dependencies]
-num = "0.4.3"
 xplm-sys = "0.5.0"
 thiserror = "1.0.58"
+num = { version = "0.4.*", optional = true }
 uom = { version = "0.37.*", optional = true }
 
 [dev-dependencies]
@@ -20,6 +20,7 @@ derive_more = { version = "2.1.0", features = ["try_from"] }
 
 [features]
 uom_conv = ["uom"]
+number_validation = ["num"]
 
 [profile.release]
 opt-level = 3

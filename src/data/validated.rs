@@ -221,7 +221,9 @@ pub mod range {
 }
 
 pub mod validator {
-    use std::{marker::PhantomData, num::FpCategory};
+    use std::marker::PhantomData;
+    #[cfg(feature = "number_validation")]
+    use std::num::FpCategory;
 
     use super::Validator;
 
@@ -296,6 +298,7 @@ pub mod validator {
 
     /// Validation error for numbers. This error enum is returned from the various
     /// numeric validators in this module.
+    #[cfg(feature = "number_validation")]
     #[derive(Clone, Debug, thiserror::Error)]
     pub enum NumberValidationError<T> {
         /// Encountered a number which cannot be classified as a normal floating
@@ -310,8 +313,10 @@ pub mod validator {
 
     /// Validator for floating point numbers, which returns success if the number
     /// is classified as a normal number (finite, non-NaN and non-denormal).
+    #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct NormalFloat {}
+    #[cfg(feature = "number_validation")]
     impl<T: num::Float + std::fmt::Debug> Validator<T> for NormalFloat {
         type Error = NumberValidationError<T>;
         fn validate(data: &T) -> Result<(), Self::Error> {
@@ -321,7 +326,7 @@ pub mod validator {
             }
         }
     }
-
+    #[cfg(feature = "number_validation")]
     macro_rules! try_conv_from_i64 {
         ($T: ty, $value: expr) => {
             <$T>::from_i64($value).unwrap_or_else(|| {
@@ -332,8 +337,10 @@ pub mod validator {
     /// Provides a range validator equivalent to a half-open `START..END` range expression.
     /// The start and end bounds must be specified as generic constants when this type is
     /// used.
+    #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct Range<const START: i64, const END: i64> {}
+    #[cfg(feature = "number_validation")]
     impl<T, const START: i64, const END: i64> Validator<T> for Range<START, END>
     where
         T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
@@ -351,8 +358,10 @@ pub mod validator {
     /// Provides a range validator, where both the start and end bound are open. This
     /// has no direct equivalent in Rust's range expressions. The start and end bounds
     /// must be specified as generic constants when this type is used.
+    #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct RangeExclusive<const START: i64, const END: i64> {}
+    #[cfg(feature = "number_validation")]
     impl<T, const START: i64, const END: i64> Validator<T> for RangeExclusive<START, END>
     where
         T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
@@ -371,8 +380,10 @@ pub mod validator {
     /// Provides a range validator equivalent to an inclusive `START..=END` Rust range
     /// express. The start and end bounds must be specified as generic constants when
     /// this type is used.
+    #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct RangeInclusive<const START: i64, const END: i64> {}
+    #[cfg(feature = "number_validation")]
     impl<T, const START: i64, const END: i64> Validator<T> for RangeInclusive<START, END>
     where
         T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
@@ -390,8 +401,10 @@ pub mod validator {
     /// Provides a range validator equivalent to a half-bounded `START..` Rust range
     /// expression. The start and end bounds must be specified as generic constants
     /// when this type is used.
+    #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct RangeFrom<const START: i64> {}
+    #[cfg(feature = "number_validation")]
     impl<T, const START: i64> Validator<T> for RangeFrom<START>
     where
         T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
@@ -408,8 +421,10 @@ pub mod validator {
     /// Provides a range validator, where the start bound is exclusive and the end
     /// is unbounded. This has no direct equivalent in Rust's range expressions. The
     /// start bound must be specified as a generic constant when this type is used.
+    #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct RangeFromExclusive<const START: i64> {}
+    #[cfg(feature = "number_validation")]
     impl<T, const START: i64> Validator<T> for RangeFromExclusive<START>
     where
         T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
@@ -427,8 +442,10 @@ pub mod validator {
     /// Provides a range validator equivalent to a half-bounded exclusive `..END`
     /// Rust range expression. The start and end bounds must be specified as
     /// generic constants when this type is used.
+    #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct RangeTo<const START: i64> {}
+    #[cfg(feature = "number_validation")]
     impl<T, const END: i64> Validator<T> for RangeTo<END>
     where
         T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
@@ -445,8 +462,10 @@ pub mod validator {
     /// Provides a range validator equivalent to a half-bounded inclusive
     /// `..=END` Rust range expression. The start and end bounds must be
     /// specified as generic constants when this type is used.
+    #[cfg(feature = "number_validation")]
     #[derive(Copy, Clone, Debug)]
     pub struct RangeToInclusive<const START: i64> {}
+    #[cfg(feature = "number_validation")]
     impl<T, const END: i64> Validator<T> for RangeToInclusive<END>
     where
         T: num::Num + Copy + PartialOrd + num::FromPrimitive + std::fmt::Debug,
@@ -461,6 +480,7 @@ pub mod validator {
         }
     }
 
+    #[cfg(feature = "number_validation")]
     #[derive(Clone, Debug)]
     pub enum RangeAny<T> {
         Range(::std::ops::Range<T>),
@@ -474,6 +494,7 @@ pub mod validator {
     }
     macro_rules! impl_from_for_range_any {
         ($srctype:ty, $variant:ident) => {
+            #[cfg(feature = "number_validation")]
             impl<T> From<$srctype> for RangeAny<T> {
                 fn from(value: $srctype) -> Self {
                     Self::$variant(value)
