@@ -5,6 +5,8 @@ use xplm_sys::*;
 
 /// Datarefs created by X-Plane or other plugins
 pub mod borrowed;
+/// Datarefs created by this plugin, but whose contents are generated dynamically.
+pub mod dynamic;
 /// Datarefs created by this plugin
 pub mod owned;
 

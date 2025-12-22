@@ -66,54 +66,15 @@ impl<T: DataType + ?Sized, A: Access> OwnedData<T, A> {
                 value_ptr as *mut c_void,
             )
         };
-
-        Self::notify_dre_plugin(&name_c);
-
-        assert!(!id.is_null());
+        if id.is_null() {
+            return Err(CreateError::RegisterFailed);
+        }
+        notify_dre_plugin(&name_c);
         Ok(OwnedData {
             id,
             value: value_box,
             access_phantom: PhantomData,
         })
-    }
-
-    // Notifies DataRefEditor or DataRefTool of the new dataref by sending an inter-plugin
-    // message containing the new dataref name.
-    fn notify_dre_plugin(name_c: &std::ffi::CStr) {
-        use std::cell::OnceCell;
-        use std::sync::Mutex;
-        const DRE_PLUGIN_SIGS: &[&std::ffi::CStr] = &[
-            c"com.leecbaker.datareftool",
-            c"xplanesdk.examples.DataRefEditor",
-        ];
-        const DRE_MSG_ADD_DATAREF: i32 = 0x01000000;
-        static DATAREF_EDITOR: Mutex<OnceCell<Option<XPLMPluginID>>> = Mutex::new(OnceCell::new());
-
-        // Check if DataRefEditor is present. If it is, notify it of the
-        // new dataref.
-        if let Some(plugin_id) = DATAREF_EDITOR
-            .lock()
-            .expect("panicked lock")
-            .get_or_init(|| unsafe {
-                for sig in DRE_PLUGIN_SIGS {
-                    let plugin_id = XPLMFindPluginBySignature(sig.as_ptr());
-                    if plugin_id != XPLM_NO_PLUGIN_ID {
-                        return Some(plugin_id);
-                    }
-                }
-                None
-            })
-            .as_ref()
-            .copied()
-        {
-            unsafe {
-                XPLMSendMessageToPlugin(
-                    plugin_id,
-                    DRE_MSG_ADD_DATAREF,
-                    name_c.as_ptr() as *mut c_void,
-                );
-            }
-        }
     }
 
     /// Returns 1 if this dataref should be writeable by other plugins and X-Plane
@@ -216,6 +177,44 @@ impl<T: DataType + ?Sized, A> Drop for OwnedData<T, A> {
     }
 }
 
+// Notifies DataRefEditor or DataRefTool of the new dataref by sending an inter-plugin
+// message containing the new dataref name.
+pub(crate) fn notify_dre_plugin(name_c: &std::ffi::CStr) {
+    use std::cell::OnceCell;
+    use std::sync::Mutex;
+    const DRE_PLUGIN_SIGS: &[&std::ffi::CStr] = &[
+        c"com.leecbaker.datareftool",
+        c"xplanesdk.examples.DataRefEditor",
+    ];
+    const DRE_MSG_ADD_DATAREF: i32 = 0x01000000;
+    static DATAREF_EDITOR: Mutex<OnceCell<Option<XPLMPluginID>>> = Mutex::new(OnceCell::new());
+
+    // Check if DataRefEditor is present. If it is, notify it of the new dataref.
+    if let Some(plugin_id) = DATAREF_EDITOR
+        .lock()
+        .expect("panicked lock")
+        .get_or_init(|| unsafe {
+            for sig in DRE_PLUGIN_SIGS {
+                let plugin_id = XPLMFindPluginBySignature(sig.as_ptr());
+                if plugin_id != XPLM_NO_PLUGIN_ID {
+                    return Some(plugin_id);
+                }
+            }
+            None
+        })
+        .as_ref()
+        .copied()
+    {
+        unsafe {
+            XPLMSendMessageToPlugin(
+                plugin_id,
+                DRE_MSG_ADD_DATAREF,
+                name_c.as_ptr() as *mut c_void,
+            );
+        }
+    }
+}
+
 // DataRead and DataReadWrite
 macro_rules! impl_read_write {
     (for $native_type:ty) => {
@@ -297,6 +296,10 @@ pub enum CreateError {
     /// The DataRef exists already
     #[error("DataRef already exists")]
     Exists,
+
+    /// X-Plane failed creating the dataref (returned `NULL` from the register function).
+    #[error("Registering the DataRef failed for an unknown reason")]
+    RegisterFailed,
 }
 
 // Read/write callbacks
