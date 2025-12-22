@@ -19,7 +19,7 @@ uom = { version = "0.37.*", optional = true }
 derive_more = { version = "2.1.0", features = ["try_from"] }
 
 [features]
-uom_conv = ["uom"]
+uom_conv = ["uom", "num"]
 number_validation = ["num"]
 
 [profile.release]

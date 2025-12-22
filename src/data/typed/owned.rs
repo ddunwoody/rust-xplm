@@ -73,15 +73,14 @@ use std::marker::PhantomData;
 ///   writable by *us*, since we own the data. This type argument instead denotes whether
 ///   the dataref should be writable by other plugins.
 ///
-/// # Example Enum Owned DataRef Read & Write
+/// # Example
+///
 /// ```no_run
 /// use xplm::data::ReadWrite;
 /// use xplm::data::typed::owned::TypedOwnedData;
 /// use xplm::data::typed::{TypedDataRead, TypedDataReadWrite};
 /// use xplm::data::typed::{InputUnitConversion, OutputUnitConversion};
-/// // Create the dataref and populate it with the default value of MyEnum. This can fail
-/// // if the dataref already exists.
-/// let mut my_dr = TypedOwnedData::<i32, MyEnum, MyEnum>::create("my/enumdata").unwrap();
+///
 /// #[derive(Copy, Clone, Debug, Default)]
 /// enum MyEnum {
 ///     ValueA = 0,
@@ -89,6 +88,7 @@ use std::marker::PhantomData;
 ///     ValueB = 1,
 ///     ValueC = 2,
 /// }
+///
 /// // Implement the necessary traits for MyEnum to enable the typed dataref
 /// // to perform the input/output conversion and validation.
 /// #[derive(Debug)]
@@ -109,6 +109,11 @@ use std::marker::PhantomData;
 ///         *value as i32
 ///     }
 /// }
+///
+/// // Create the dataref and populate it with the default value of MyEnum. This can fail
+/// // if the dataref already exists.
+/// let mut my_dr = TypedOwnedData::<i32, MyEnum, MyEnum>::create("my/enumdata").unwrap();
+///
 /// // We can now read and write `MyEnum' enums directly to/from the dataref:
 /// match my_dr.get() {
 ///     Ok(my_enum) => assert!(matches!(my_enum, MyEnum::ValueB)),

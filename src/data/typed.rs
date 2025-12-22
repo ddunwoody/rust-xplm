@@ -44,7 +44,9 @@ use std::marker::PhantomData;
 
 use super::{ArrayRead, ArrayReadWrite, ArrayType, DataRead, DataReadWrite};
 
+/// Typed datarefs created by X-Plane or other plugins.
 pub mod borrowed;
+/// Typed datarefs created by this plugin.
 pub mod owned;
 #[cfg(feature = "uom_conv")]
 pub mod uom_conv;
