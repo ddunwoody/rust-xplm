@@ -177,8 +177,8 @@ impl<T: DataType + ?Sized, A> Drop for OwnedData<T, A> {
     }
 }
 
-// Notifies DataRefEditor or DataRefTool of the new dataref by sending an inter-plugin
-// message containing the new dataref name.
+// Notifies DataRefEditor or DataRefTool about a newly created dataref, by sending an
+// inter-plugin message containing the new dataref's name.
 pub(crate) fn notify_dre_plugin(name_c: &std::ffi::CStr) {
     use std::cell::OnceCell;
     use std::sync::Mutex;

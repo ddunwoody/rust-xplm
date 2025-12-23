@@ -3,11 +3,10 @@
 //! Bindings to the X-Plane plugin SDK
 //!
 //! ## Feature Flags
-//! - `uom_conv` -- Enables the `xplm::data::typed::uom_conv` module and all of the functions
-//!   it contains. This adds a dependency on the [uom](https://crates.io/crates/uom) crate.
+//! - `uom_conv` -- Enables the [`crate::uom_typed_dataref!`] dataref. This adds
+//!   a dependency on the [`uom`] crate.
 //! - `number_validation` -- Enables the `NormalFloat` and `Range*` validators in
-//!   `xplm::data::validated::validator`. This adds a dependency on the
-//!   [num](https://crates.io/crates/num) crate.
+//!   [`crate::data::validated::validator`]. This adds a dependency on the [`num`] crate.
 
 extern crate xplm_sys;
 

@@ -57,21 +57,33 @@ use crate::data::{
     Access, ArrayType, DataType, ReadOnly, ReadWrite,
 };
 
+/// Trait which must be implemented by data sources for reading dynamic scalar datarefs.
 pub trait DynamicDataRead<T: DataType + ?Sized> {
+    /// Called by the dataref to read the dataref's scalar data.
     fn read(&self) -> T;
 }
 
+/// Trait which must be implemented by data sources for writing dynamic scalar datarefs.
 pub trait DynamicDataReadWrite<T: DataType + ?Sized>: DynamicDataRead<T> {
+    /// Called by the dataref to write new scalar data into the dataref.
     fn write(&mut self, value: T);
 }
 
+/// Trait which must be implemented by data sources for reading dynamic array datarefs.
 #[allow(clippy::len_without_is_empty)]
 pub trait DynamicArrayRead<T: DataType> {
+    /// Called by the dataref to read the dataref's array data. The dataref should be read
+    /// starting at `offset` and the data should be written to the `out_data` slice. The
+    /// function should return the actual number of data items written.
     fn read(&self, out_data: &mut [T], offset: usize) -> usize;
+    /// Should return the full length of the array dataref.
     fn len(&self) -> usize;
 }
 
+/// Trait which must be implemented by data sources for writing dynamic array datarefs.
 pub trait DynamicArrayReadWrite<T: DataType>: DynamicArrayRead<T> {
+    /// Called by the dataref to write new array data into the dataref. The data should
+    /// be written starting at `offset`.
     fn write(&mut self, in_data: &[T], offset: usize);
 }
 
@@ -83,7 +95,7 @@ pub trait DynamicArrayReadWrite<T: DataType>: DynamicArrayRead<T> {
 /// ```no_run
 /// use xplm::data::dynamic::{DynamicDataRead, DynamicData};
 ///
-/// // Our dynamic data generator.
+/// // Our dynamic data source.
 /// struct MyUnixTime {}
 /// // To allow reading, we must implement either the `DynamicDataRead` trait for scalar
 /// // data types, or the `DynamicArrayRead` trait for array data respectively. If the
@@ -181,6 +193,7 @@ impl<T: DataType + ?Sized, D, A: Access> DynamicData<T, D, A> {
 macro_rules! impl_dynamic_data {
     ($native_type:ty) => {
         impl<D: DynamicDataRead<$native_type>> DynamicData<$native_type, D, ReadOnly> {
+            /// Creates a new read-only scalar dataref with a dynamic data source.
             pub fn create(name: &str, data_source: D) -> Result<Self, CreateError> {
                 Self::create_common(
                     name,
@@ -190,6 +203,7 @@ macro_rules! impl_dynamic_data {
             }
         }
         impl<D: DynamicDataReadWrite<$native_type>> DynamicData<$native_type, D, ReadWrite> {
+            /// Creates a new writeable scalar dataref with a dynamic data source.
             pub fn create(name: &str, data_source: D) -> Result<Self, CreateError> {
                 Self::create_common(
                     name,
@@ -204,6 +218,7 @@ macro_rules! impl_dynamic_data {
         where
             [$native_type]: ArrayType,
         {
+            /// Creates a new read-only array dataref with a dynamic data source.
             pub fn create(name: &str, data_source: D) -> Result<Self, CreateError> {
                 Self::create_common(
                     name,
@@ -216,6 +231,7 @@ macro_rules! impl_dynamic_data {
         where
             [$native_type]: ArrayType,
         {
+            /// Creates a new writeable array dataref with a dynamic data source.
             pub fn create(name: &str, data_source: D) -> Result<Self, CreateError> {
                 Self::create_common(
                     name,
