@@ -104,7 +104,7 @@ where
 /// consuming junk written by somebody else.
 ///
 /// This works the same as a normal [`crate::data::borrowed::DataRef`] struct, except the
-/// second generic argument must be a struct which implements the `Validator` trait. See
+/// second generic argument must be a struct which implements the [`Validator`] trait. See
 /// [`crate::data::validated::validator`] for a list of ready-to-use data validators.
 /// NOTE: you can combine multiple validators into logical structures using the
 /// [`crate::data::validated::validator::And`] and [`crate::data::validated::validator::Or`]
@@ -173,8 +173,8 @@ impl_validated_data!(array i32);
 impl_validated_data!(array u32);
 impl_validated_data!(array f32);
 
-/// Any data validator passed to `ValidatedDataRef` must implement this trait.
-/// Note that when the dataref is referencing an array, the `validate` function
+/// Any data validator passed to [`borrowed::ValidatedDataRef`] must implement this trait.
+/// Note that when the dataref is referencing an array, the `validate()` function
 /// will be invoked for the individual elements of the array, instead of the
 /// array as a whole.
 pub trait Validator<T: ?Sized> {
@@ -184,7 +184,7 @@ pub trait Validator<T: ?Sized> {
     fn validate(data: &T) -> Result<(), Self::Error>;
 }
 
-/// Additional generic Range types implementing the `std::ops::RangeBounds` trait.
+/// Additional generic Range types implementing the [`std::ops::RangeBounds`] trait.
 pub mod range {
     use std::fmt;
 

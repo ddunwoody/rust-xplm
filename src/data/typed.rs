@@ -69,9 +69,9 @@ pub trait OutputUnitConversion<R, X> {
 /// non-primitive data type into a dataref, and have the conversion + validation happen
 /// automatically.
 ///
-/// For convenience, it is easiest to use the canned types for either borrowed (`TypedDataRef`)
-/// or owned (`TypedOwnedData`) datarefs. Please see those types for examples on how to use
-/// them.
+/// For convenience, it is easiest to use the canned types for either borrowed
+/// ([`borrowed::TypedDataRef`]) or owned ([`owned::TypedOwnedData`]) datarefs.
+/// Please see those types for examples on how to use them.
 #[derive(Copy, Clone, Debug)]
 pub struct TypedData<X: ?Sized, R, Conversion, Dref> {
     dr: Dref,

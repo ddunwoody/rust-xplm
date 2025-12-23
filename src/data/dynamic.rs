@@ -120,7 +120,7 @@ pub struct DynamicData<T: DataType + ?Sized, D, A = ReadOnly> {
     /// The source for the data dynamically produced by this dataref. This must be
     /// boxed to allow passing a permanent pointer to it to the dataref registration
     /// system as the `refcon` argument. This way, the address of the contents will
-    /// not move. We don't need `std::pin::Pin` here, because the `DynamicData` is
+    /// not move. We don't need [`std::pin::Pin`] here, because the `DynamicData` is
     /// not self-referrential.
     _data_source: Box<D>,
     /// Payload phantom data
