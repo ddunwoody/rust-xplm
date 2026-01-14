@@ -87,14 +87,14 @@ impl<T: DataType + ?Sized, A: Access> OwnedData<T, A> {
     }
     fn int_read() -> XPLMGetDatai_f {
         if T::sim_type() & xplmType_Int as i32 != 0 {
-            Some(int_read)
+            Some(int_read::<T>)
         } else {
             None
         }
     }
     fn int_write() -> XPLMSetDatai_f {
         if T::sim_type() & xplmType_Int as i32 != 0 && A::writeable() {
-            Some(int_write)
+            Some(int_write::<T>)
         } else {
             None
         }
@@ -306,15 +306,23 @@ pub enum CreateError {
 // The refcon is a pointer to the data
 
 /// Integer read callback
-unsafe extern "C" fn int_read(refcon: *mut c_void) -> c_int {
-    let data_ptr = refcon as *mut c_int;
-    *data_ptr
+unsafe extern "C" fn int_read<T: DataType + ?Sized>(refcon: *mut c_void) -> c_int {
+    // We need to perform a low-level memcpy, because the dataref might also hold an
+    // 8-bit or 16-bit type (bool's, u16's etc.)
+    let storage_in = refcon as *const T::Storage;
+    let mut value_out = 0;
+    let value_out_ptr: *mut c_int = &mut value_out;
+    std::ptr::copy_nonoverlapping(storage_in, value_out_ptr as *mut T::Storage, 1);
+    value_out
 }
 
 /// Integer write callback
-unsafe extern "C" fn int_write(refcon: *mut c_void, value: c_int) {
-    let data_ptr = refcon as *mut c_int;
-    *data_ptr = value;
+unsafe extern "C" fn int_write<T: DataType + ?Sized>(refcon: *mut c_void, value_in: c_int) {
+    // We need to perform a low-level memcpy, because the dataref might also hold an
+    // 8-bit or 16-bit type (bool's, u16's etc.)
+    let value_in_ptr: *const c_int = &value_in;
+    let storage_out = refcon as *mut T::Storage;
+    std::ptr::copy_nonoverlapping(value_in_ptr as *const T::Storage, storage_out, 1);
 }
 
 /// Float read callback
