@@ -41,6 +41,8 @@ pub mod feature;
 pub mod flight_loop;
 /// 2D user interface geometry
 pub mod geometry;
+/// Simple drawing routines from XPLMGraphics.h
+pub mod graphics;
 /// User interface menus
 pub mod menu;
 /// Plugin creation and management
