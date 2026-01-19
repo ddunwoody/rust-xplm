@@ -40,7 +40,7 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-use crate::data::owned::{CreateError, OwnedDataType};
+use crate::data::owned::CreateError;
 use crate::data::{owned::OwnedData, ReadOnly};
 use crate::data::{Access, ArrayType, DataType};
 
@@ -128,7 +128,7 @@ pub type TypedOwnedData<X, R, C, A = ReadOnly> = super::TypedData<X, R, C, Owned
 
 impl<X, R, C, A> TypedOwnedData<X, R, C, A>
 where
-    X: DataType + OwnedDataType,
+    X: DataType,
     A: Access,
 {
     /// Creates a new dataref with the provided name containing the default value of `R`.
@@ -164,7 +164,7 @@ where
 
 impl<X, R, C, A> TypedOwnedData<[X], R, C, A>
 where
-    [X]: ArrayType + OwnedDataType,
+    [X]: ArrayType,
     A: Access,
 {
     /// Creates a new dataref with the provided name containing an array of `R`, of

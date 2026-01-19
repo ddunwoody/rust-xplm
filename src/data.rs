@@ -1,5 +1,5 @@
 use crate::ffi::StringBuffer;
-use std::ffi::{CString, NulError};
+use std::ffi::{c_double, c_float, c_int, c_void, CString, NulError};
 use std::string::FromUtf8Error;
 use xplm_sys::*;
 
@@ -188,7 +188,7 @@ where
 }
 
 /// Marker for types that can be used with datarefs
-pub trait DataType {
+pub trait DataType: OwnedDataType {
     /// The type that should be used to store data of this type
     /// For basic types, this is usually Self. For [T] types, this is Vec<T>.
     #[doc(hidden)]
@@ -255,3 +255,315 @@ impl_type!([u32]: array as xplmType_IntArray);
 impl_type!([f32]: array as xplmType_FloatArray);
 impl_type!([u8]: array as xplmType_Data);
 impl_type!([i8]: array as xplmType_Data);
+
+pub trait OwnedDataType {
+    fn int_read() -> XPLMGetDatai_f {
+        None
+    }
+    fn int_write() -> XPLMSetDatai_f {
+        None
+    }
+    fn float_read() -> XPLMGetDataf_f {
+        None
+    }
+    fn float_write() -> XPLMSetDataf_f {
+        None
+    }
+    fn double_read() -> XPLMGetDatad_f {
+        None
+    }
+    fn double_write() -> XPLMSetDatad_f {
+        None
+    }
+    fn int_array_read() -> XPLMGetDatavi_f {
+        None
+    }
+    fn int_array_write() -> XPLMSetDatavi_f {
+        None
+    }
+    fn float_array_read() -> XPLMGetDatavf_f {
+        None
+    }
+    fn float_array_write() -> XPLMSetDatavf_f {
+        None
+    }
+    fn byte_array_read() -> XPLMGetDatab_f {
+        None
+    }
+    fn byte_array_write() -> XPLMSetDatab_f {
+        None
+    }
+}
+
+macro_rules! impl_scalar_read_write {
+    ($native_type:ty, $c_type:ty, $read_fn:ident, $read_fn_type:ty, $write_fn:ident,
+    $write_fn_type:ty$(,)?) => {
+        impl OwnedDataType for $native_type {
+            fn $read_fn() -> $read_fn_type {
+                unsafe extern "C" fn read_fn(refcon: *mut c_void) -> $c_type {
+                    let storage = refcon as *const $native_type;
+                    (*storage) as $c_type
+                }
+                Some(read_fn)
+            }
+            fn $write_fn() -> $write_fn_type {
+                unsafe extern "C" fn write_fn(refcon: *mut c_void, value: $c_type) {
+                    let storage = refcon as *mut $native_type;
+                    (*storage) = value as $native_type;
+                }
+                Some(write_fn)
+            }
+        }
+    };
+}
+
+macro_rules! impl_array_read_write {
+    ($native_type:ty, $c_type:ty, $read_fn:ident, $read_fn_type:ty, $write_fn:ident,
+    $write_fn_type:ty$(,)?) => {
+        impl OwnedDataType for [$native_type] {
+            fn $read_fn() -> $read_fn_type {
+                unsafe extern "C" fn read_fn(
+                    refcon: *mut c_void,
+                    out_values: *mut $c_type,
+                    offset: c_int,
+                    len: c_int,
+                ) -> c_int {
+                    let vec = refcon as *mut Vec<$native_type>;
+                    let vec = unsafe { vec.as_mut().expect("null pointer encountered") };
+                    let Ok(len) = usize::try_from(len) else {
+                        return 0;
+                    };
+                    let Ok(offset) = usize::try_from(offset) else {
+                        return 0;
+                    };
+                    if out_values.is_null() {
+                        return vec.len() as _;
+                    }
+                    let out_values = out_values as *mut $native_type;
+                    let out_values = unsafe { std::slice::from_raw_parts_mut(out_values, len) };
+                    if offset >= vec.len() {
+                        return 0;
+                    }
+                    let to_copy = (vec.len() - offset).min(len);
+                    out_values[..to_copy].copy_from_slice(&vec[offset..(offset + to_copy)]);
+                    to_copy as c_int
+                }
+                Some(read_fn)
+            }
+            fn $write_fn() -> $write_fn_type {
+                unsafe extern "C" fn write_fn(
+                    refcon: *mut c_void,
+                    in_values: *mut $c_type,
+                    offset: c_int,
+                    len: c_int,
+                ) {
+                    if in_values.is_null() {
+                        return;
+                    }
+                    let vec = refcon as *mut Vec<$native_type>;
+                    let vec = unsafe { vec.as_mut().expect("null pointer encountered") };
+                    let Ok(len) = usize::try_from(len) else {
+                        return;
+                    };
+                    let Ok(offset) = usize::try_from(offset) else {
+                        return;
+                    };
+                    let in_values = in_values as *const $native_type;
+                    let in_values = unsafe { std::slice::from_raw_parts(in_values, len) };
+                    if offset >= vec.len() {
+                        return;
+                    }
+                    let to_copy = (vec.len() - offset).min(len);
+                    vec[offset..(offset + to_copy)].copy_from_slice(&in_values[..to_copy]);
+                }
+                Some(write_fn)
+            }
+        }
+    };
+}
+
+impl OwnedDataType for bool {
+    fn int_read() -> XPLMGetDatai_f {
+        unsafe extern "C" fn read_fn(refcon: *mut c_void) -> c_int {
+            let storage = refcon as *const bool;
+            (*storage) as c_int
+        }
+        Some(read_fn)
+    }
+    fn int_write() -> XPLMSetDatai_f {
+        unsafe extern "C" fn write_fn(refcon: *mut c_void, value: c_int) {
+            let storage = refcon as *mut bool;
+            (*storage) = value != 0;
+        }
+        Some(write_fn)
+    }
+}
+
+impl_scalar_read_write!(
+    i8,
+    c_int,
+    int_read,
+    XPLMGetDatai_f,
+    int_write,
+    XPLMSetDatai_f,
+);
+impl_scalar_read_write!(
+    u8,
+    c_int,
+    int_read,
+    XPLMGetDatai_f,
+    int_write,
+    XPLMSetDatai_f,
+);
+impl_scalar_read_write!(
+    i16,
+    c_int,
+    int_read,
+    XPLMGetDatai_f,
+    int_write,
+    XPLMSetDatai_f,
+);
+impl_scalar_read_write!(
+    u16,
+    c_int,
+    int_read,
+    XPLMGetDatai_f,
+    int_write,
+    XPLMSetDatai_f,
+);
+impl_scalar_read_write!(
+    u32,
+    c_int,
+    int_read,
+    XPLMGetDatai_f,
+    int_write,
+    XPLMSetDatai_f,
+);
+impl_scalar_read_write!(
+    i32,
+    c_int,
+    int_read,
+    XPLMGetDatai_f,
+    int_write,
+    XPLMSetDatai_f,
+);
+impl_scalar_read_write!(
+    f32,
+    c_float,
+    float_read,
+    XPLMGetDataf_f,
+    float_write,
+    XPLMSetDataf_f,
+);
+impl_scalar_read_write!(
+    f64,
+    c_double,
+    double_read,
+    XPLMGetDatad_f,
+    double_write,
+    XPLMSetDatad_f,
+);
+
+impl_array_read_write!(
+    u32,
+    c_int,
+    int_array_read,
+    XPLMGetDatavi_f,
+    int_array_write,
+    XPLMSetDatavi_f,
+);
+impl_array_read_write!(
+    i32,
+    c_int,
+    int_array_read,
+    XPLMGetDatavi_f,
+    int_array_write,
+    XPLMSetDatavi_f,
+);
+impl_array_read_write!(
+    f32,
+    c_float,
+    float_array_read,
+    XPLMGetDatavf_f,
+    float_array_write,
+    XPLMSetDatavf_f,
+);
+impl_array_read_write!(
+    u8,
+    c_void,
+    byte_array_read,
+    XPLMGetDatab_f,
+    byte_array_write,
+    XPLMSetDatab_f,
+);
+impl_array_read_write!(
+    i8,
+    c_void,
+    byte_array_read,
+    XPLMGetDatab_f,
+    byte_array_write,
+    XPLMSetDatab_f,
+);
+
+impl OwnedDataType for [bool] {
+    fn int_array_read() -> XPLMGetDatavi_f {
+        unsafe extern "C" fn read_fn(
+            refcon: *mut c_void,
+            out_values: *mut c_int,
+            offset: c_int,
+            len: c_int,
+        ) -> c_int {
+            let vec = refcon as *mut Vec<bool>;
+            let vec = unsafe { vec.as_mut().expect("null pointer encountered") };
+            let Ok(len) = usize::try_from(len) else {
+                return 0;
+            };
+            let Ok(offset) = usize::try_from(offset) else {
+                return 0;
+            };
+            if out_values.is_null() {
+                return vec.len() as _;
+            }
+            let out_values = unsafe { std::slice::from_raw_parts_mut(out_values, len) };
+            if offset >= vec.len() {
+                return 0;
+            }
+            let to_copy = (vec.len() - offset).min(len);
+            for i in 0..to_copy {
+                out_values[i] = vec[offset + i] as c_int;
+            }
+            to_copy as c_int
+        }
+        Some(read_fn)
+    }
+    fn int_array_write() -> XPLMSetDatavi_f {
+        unsafe extern "C" fn write_fn(
+            refcon: *mut c_void,
+            in_values: *mut c_int,
+            offset: c_int,
+            len: c_int,
+        ) {
+            if in_values.is_null() {
+                return;
+            }
+            let vec = refcon as *mut Vec<bool>;
+            let vec = unsafe { vec.as_mut().expect("null pointer encountered") };
+            let Ok(len) = usize::try_from(len) else {
+                return;
+            };
+            let Ok(offset) = usize::try_from(offset) else {
+                return;
+            };
+            let in_values = in_values as *const c_int;
+            let in_values = unsafe { std::slice::from_raw_parts(in_values, len) };
+            if offset >= vec.len() {
+                return;
+            }
+            let to_copy = (vec.len() - offset).min(len);
+            for i in 0..to_copy {
+                vec[offset + i] = in_values[i] != 0;
+            }
+        }
+        Some(write_fn)
+    }
+}

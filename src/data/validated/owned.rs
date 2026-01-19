@@ -47,7 +47,6 @@ use crate::data::{
 use std::marker::PhantomData;
 
 use super::{ValidatedArrayRead, ValidatedData, ValidatedDataRead};
-use crate::data::owned::OwnedDataType;
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum ValidatedCreateError<T, V>
@@ -68,7 +67,7 @@ macro_rules! impl_validated_owned_data {
     ($native_type:ty) => {
         impl<V, A> ValidatedOwnedData<$native_type, V, A>
         where
-            $native_type: DataType + OwnedDataType,
+            $native_type: DataType,
             V: super::Validator<$native_type>,
             A: Access,
         {
