@@ -169,6 +169,7 @@ mod tests {
     use crate::data::validated::{validator, ValidatedDataRead, ValidatedDataReadWrite};
     use crate::data::{DataReadWrite, ReadWrite};
 
+    #[cfg(feature = "number_validation")]
     #[test]
     fn test_validated_dataref() {
         let _dr_lock = crate::test_stubs::DATAREF_SYS_LOCK.lock();

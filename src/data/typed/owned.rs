@@ -40,7 +40,7 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-use crate::data::owned::CreateError;
+use crate::data::owned::{CreateError, OwnedDataType};
 use crate::data::{owned::OwnedData, ReadOnly};
 use crate::data::{Access, ArrayType, DataType};
 
@@ -128,7 +128,7 @@ pub type TypedOwnedData<X, R, C, A = ReadOnly> = super::TypedData<X, R, C, Owned
 
 impl<X, R, C, A> TypedOwnedData<X, R, C, A>
 where
-    X: DataType,
+    X: DataType + OwnedDataType,
     A: Access,
 {
     /// Creates a new dataref with the provided name containing the default value of `R`.
@@ -164,7 +164,7 @@ where
 
 impl<X, R, C, A> TypedOwnedData<[X], R, C, A>
 where
-    [X]: ArrayType,
+    [X]: ArrayType + OwnedDataType,
     A: Access,
 {
     /// Creates a new dataref with the provided name containing an array of `R`, of
@@ -219,7 +219,7 @@ mod tests {
 
         #[derive(Copy, Clone, Default, derive_more::TryFrom, Debug, PartialEq, Eq)]
         #[try_from(repr)]
-        #[repr(u32)]
+        #[repr(i32)]
         enum ValidValues {
             #[default]
             A,
@@ -227,31 +227,31 @@ mod tests {
             C,
         }
         struct ValidValuesConv {}
-        impl InputUnitConversion<u32, ValidValues> for ValidValuesConv {
-            type Error = derive_more::TryFromReprError<u32>;
-            fn try_conv_in(value: u32) -> Result<ValidValues, Self::Error> {
+        impl InputUnitConversion<i32, ValidValues> for ValidValuesConv {
+            type Error = derive_more::TryFromReprError<i32>;
+            fn try_conv_in(value: i32) -> Result<ValidValues, Self::Error> {
                 ValidValues::try_from(value)
             }
         }
-        impl OutputUnitConversion<ValidValues, u32> for ValidValuesConv {
-            fn conv_out(value: &ValidValues) -> u32 {
+        impl OutputUnitConversion<ValidValues, i32> for ValidValuesConv {
+            fn conv_out(value: &ValidValues) -> i32 {
                 *value as _
             }
         }
         let mut dr_ro =
-            TypedOwnedData::<u32, ValidValues, ValidValuesConv>::create("test/new/u32_1").unwrap();
+            TypedOwnedData::<i32, ValidValues, ValidValuesConv>::create("test/new/i32_1").unwrap();
         dr_ro.set(ValidValues::B);
         assert_eq!(dr_ro.get().unwrap(), ValidValues::B);
 
-        let mut dr_rw = TypedOwnedData::<u32, ValidValues, ValidValuesConv, ReadWrite>::create(
-            "test/new/u32_2",
+        let mut dr_rw = TypedOwnedData::<i32, ValidValues, ValidValuesConv, ReadWrite>::create(
+            "test/new/i32_2",
         )
         .unwrap();
         dr_rw.set(ValidValues::C);
         assert_eq!(dr_rw.get().unwrap(), ValidValues::C);
 
         let mut dr_array =
-            TypedOwnedData::<[u32], ValidValues, ValidValuesConv>::create("test/new/u32_3", 2)
+            TypedOwnedData::<[i32], ValidValues, ValidValuesConv>::create("test/new/i32_3", 2)
                 .unwrap();
         dr_array.set_subdata(&[ValidValues::C], 1);
         assert_eq!(dr_array.get().unwrap(), [ValidValues::A, ValidValues::C]);

@@ -47,6 +47,7 @@ use crate::data::{
 use std::marker::PhantomData;
 
 use super::{ValidatedArrayRead, ValidatedData, ValidatedDataRead};
+use crate::data::owned::OwnedDataType;
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum ValidatedCreateError<T, V>
@@ -67,7 +68,7 @@ macro_rules! impl_validated_owned_data {
     ($native_type:ty) => {
         impl<V, A> ValidatedOwnedData<$native_type, V, A>
         where
-            $native_type: DataType,
+            $native_type: DataType + OwnedDataType,
             V: super::Validator<$native_type>,
             A: Access,
         {
@@ -197,15 +198,12 @@ impl_validated_owned_data!(u8);
 impl_validated_owned_data!(i8);
 impl_validated_owned_data!(u16);
 impl_validated_owned_data!(i16);
-impl_validated_owned_data!(u32);
 impl_validated_owned_data!(i32);
 impl_validated_owned_data!(f32);
 impl_validated_owned_data!(f64);
 
 impl_validated_owned_data!(array bool);
 impl_validated_owned_data!(array u8);
-impl_validated_owned_data!(array i8);
-impl_validated_owned_data!(array u32);
 impl_validated_owned_data!(array i32);
 impl_validated_owned_data!(array f32);
 
@@ -215,18 +213,19 @@ mod tests {
     use crate::data::validated::{ValidatedDataRead, ValidatedDataReadWrite};
     use crate::data::ReadWrite;
 
+    #[cfg(feature = "number_validation")]
     #[test]
     fn test_validated_owned_data() {
         let _dr_lock = crate::test_stubs::DATAREF_SYS_LOCK.lock();
 
         type TestDatarefValidator = validator::Range<1, 5>;
-        assert!(ValidatedOwnedData::<u32, TestDatarefValidator>::create("test/new/u32").is_err());
+        assert!(ValidatedOwnedData::<i32, TestDatarefValidator>::create("test/new/i32").is_err());
         assert!(
-            ValidatedOwnedData::<u32, TestDatarefValidator>::create_with_value("test/new/u32", &1)
+            ValidatedOwnedData::<i32, TestDatarefValidator>::create_with_value("test/new/i32", &1)
                 .is_ok()
         );
-        let mut dr = ValidatedOwnedData::<u32, TestDatarefValidator, ReadWrite>::create_with_value(
-            "test/new/u32",
+        let mut dr = ValidatedOwnedData::<i32, TestDatarefValidator, ReadWrite>::create_with_value(
+            "test/new/i32",
             &1,
         )
         .unwrap();
