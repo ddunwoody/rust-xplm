@@ -46,6 +46,14 @@ pub trait WindowDelegate: 'static {
     fn mouse_event(&mut self, _window: &Window, _event: MouseEvent) -> bool {
         true
     }
+    /// Handles a right-click event
+    ///
+    /// Return false to consume the event or true to propagate it.
+    ///
+    /// The default implementation does nothing and allows the event to propagate.
+    fn right_mouse_event(&mut self, _window: &Window, _event: MouseEvent) -> bool {
+        true
+    }
     /// Handles a scroll event
     ///
     /// Return false to consume the event or true to propagate it.
@@ -75,6 +83,24 @@ impl Deref for WindowRef {
     }
 }
 
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
+pub enum WindowLayer {
+    FlightOverlay = xplm_sys::xplm_WindowLayerFlightOverlay as _,
+    #[default]
+    FloatingWindows = xplm_sys::xplm_WindowLayerFloatingWindows as _,
+    Modal = xplm_sys::xplm_WindowLayerModal as _,
+    GrowlNotifications = xplm_sys::xplm_WindowLayerGrowlNotifications as _,
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
+pub enum WindowDecorations {
+    None = xplm_sys::xplm_WindowDecorationNone as _,
+    #[default]
+    RoundRectangle = xplm_sys::xplm_WindowDecorationRoundRectangle as _,
+    SelfDecorated = xplm_sys::xplm_WindowDecorationSelfDecorated as _,
+    SelfDecoratedResizable = xplm_sys::xplm_WindowDecorationSelfDecoratedResizable as _,
+}
+
 /// A basic window that may appear on the screen
 ///
 /// A window has a position and size, but no appearance. Plugins must draw in their draw callbacks
@@ -92,6 +118,19 @@ impl Window {
     /// The window is originally not visible.
     #[allow(clippy::new_ret_no_self)]
     pub fn new<R: Into<Rect<i32>>, D: WindowDelegate>(geometry: R, delegate: D) -> WindowRef {
+        Self::new_custom(
+            geometry,
+            WindowLayer::FloatingWindows,
+            WindowDecorations::None,
+            delegate,
+        )
+    }
+    pub fn new_custom<R: Into<Rect<i32>>, D: WindowDelegate>(
+        geometry: R,
+        layer: WindowLayer,
+        decorations: WindowDecorations,
+        delegate: D,
+    ) -> WindowRef {
         let geometry = geometry.into();
 
         let mut window_box = Box::new(Window {
@@ -113,9 +152,9 @@ impl Window {
             handleCursorFunc: Some(window_cursor),
             handleMouseWheelFunc: Some(window_scroll),
             refcon: window_ptr as *mut _,
-            decorateAsFloatingWindow: 0,
-            layer: xplm_sys::xplm_WindowLayerFloatingWindows as _,
-            handleRightClickFunc: None,
+            decorateAsFloatingWindow: decorations as _,
+            layer: layer as _,
+            handleRightClickFunc: Some(window_right_mouse),
         };
 
         let window_id = unsafe { xplm_sys::XPLMCreateWindowEx(&mut window_info) };
@@ -205,12 +244,26 @@ unsafe extern "C" fn window_mouse(
     if let Some(action) = MouseAction::from_xplm(status) {
         let position = Point::from((x, y));
         let event = MouseEvent::new(position, action);
-        let propagate = (*window).delegate.mouse_event(&*window, event);
-        if propagate {
-            0
-        } else {
-            1
-        }
+        !(*window).delegate.mouse_event(&*window, event) as c_int
+    } else {
+        // Propagate
+        0
+    }
+}
+
+/// Right-mouse callback
+unsafe extern "C" fn window_right_mouse(
+    _window: xplm_sys::XPLMWindowID,
+    x: c_int,
+    y: c_int,
+    status: xplm_sys::XPLMMouseStatus,
+    refcon: *mut c_void,
+) -> c_int {
+    let window = refcon as *mut Window;
+    if let Some(action) = MouseAction::from_xplm(status) {
+        let position = Point::from((x, y));
+        let event = MouseEvent::new(position, action);
+        !(*window).delegate.right_mouse_event(&*window, event) as c_int
     } else {
         // Propagate
         0
