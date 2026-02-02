@@ -1,7 +1,8 @@
-use std::mem;
+use std::ffi::CString;
 use std::ops::Deref;
 use std::os::raw::*;
 use std::ptr;
+use std::{ffi::NulError, mem};
 
 use xplm_sys;
 
@@ -83,6 +84,8 @@ impl Deref for WindowRef {
     }
 }
 
+/// Defines what layer the window should be positioned in.
+/// The default is to create a floating window.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub enum WindowLayer {
     FlightOverlay = xplm_sys::xplm_WindowLayerFlightOverlay as _,
@@ -92,6 +95,8 @@ pub enum WindowLayer {
     GrowlNotifications = xplm_sys::xplm_WindowLayerGrowlNotifications as _,
 }
 
+/// Defines what decorations should be applied to the window.
+/// The default is to use X-Plane's native rounded window title bar.
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
 pub enum WindowDecorations {
     None = xplm_sys::xplm_WindowDecorationNone as _,
@@ -99,6 +104,17 @@ pub enum WindowDecorations {
     RoundRectangle = xplm_sys::xplm_WindowDecorationRoundRectangle as _,
     SelfDecorated = xplm_sys::xplm_WindowDecorationSelfDecorated as _,
     SelfDecoratedResizable = xplm_sys::xplm_WindowDecorationSelfDecoratedResizable as _,
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Hash)]
+pub enum WindowPositioningMode {
+    #[default]
+    Free = xplm_sys::xplm_WindowPositionFree as _,
+    CenterOnMonitor = xplm_sys::xplm_WindowCenterOnMonitor as _,
+    FullScreenOnMonitor = xplm_sys::xplm_WindowFullScreenOnMonitor as _,
+    FullScreenOnAllMonitors = xplm_sys::xplm_WindowFullScreenOnAllMonitors as _,
+    PopOut = xplm_sys::xplm_WindowPopOut as _,
+    Vr = xplm_sys::xplm_WindowVR as _,
 }
 
 /// A basic window that may appear on the screen
@@ -197,6 +213,32 @@ impl Window {
         unsafe {
             xplm_sys::XPLMSetWindowIsVisible(self.id, visible as _);
         }
+    }
+    /// Sets the window title, which is shown when using the standard X-Plane decorations.
+    pub fn set_title<S: AsRef<str>>(&mut self, title: S) -> Result<(), NulError> {
+        let title = CString::new(title.as_ref())?;
+        unsafe { xplm_sys::XPLMSetWindowTitle(self.id, title.as_ptr()) };
+        Ok(())
+    }
+    /// Sets the window positioning mode.
+    pub fn set_positioning_mode(&mut self, mode: WindowPositioningMode, monitor_index: i32) {
+        unsafe { xplm_sys::XPLMSetWindowPositioningMode(self.id, mode as _, monitor_index) };
+    }
+    /// Forces the window to take keyboard focus.
+    pub fn take_keyboard_focus(&self) {
+        unsafe { xplm_sys::XPLMTakeKeyboardFocus(self.id) };
+    }
+    /// Returns whether the window current has keyboard focus.
+    pub fn has_keyboard_focus(&self) -> bool {
+        unsafe { xplm_sys::XPLMHasKeyboardFocus(self.id) != 0 }
+    }
+    /// Brings a floating window to the top of the window stack.
+    pub fn bring_to_front(&self) {
+        unsafe { xplm_sys::XPLMBringWindowToFront(self.id) };
+    }
+    /// Returns whether the window is current at the top of the window stack.
+    pub fn is_in_front(&self) -> bool {
+        unsafe { xplm_sys::XPLMIsWindowInFront(self.id) != 0 }
     }
 }
 
