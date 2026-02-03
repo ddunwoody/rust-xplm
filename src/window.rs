@@ -1,5 +1,5 @@
 use std::ffi::CString;
-use std::ops::{Deref, DerefMut};
+use std::ops::Deref;
 use std::os::raw::*;
 use std::ptr;
 use std::{ffi::NulError, mem};
@@ -81,12 +81,6 @@ impl Deref for WindowRef {
     type Target = Window;
     fn deref(&self) -> &Self::Target {
         self.window.deref()
-    }
-}
-
-impl DerefMut for WindowRef {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.window.deref_mut()
     }
 }
 
@@ -221,13 +215,13 @@ impl Window {
         }
     }
     /// Sets the window title, which is shown when using the standard X-Plane decorations.
-    pub fn set_title<S: AsRef<str>>(&mut self, title: S) -> Result<(), NulError> {
+    pub fn set_title<S: AsRef<str>>(&self, title: S) -> Result<(), NulError> {
         let title = CString::new(title.as_ref())?;
         unsafe { xplm_sys::XPLMSetWindowTitle(self.id, title.as_ptr()) };
         Ok(())
     }
     /// Sets the window positioning mode.
-    pub fn set_positioning_mode(&mut self, mode: WindowPositioningMode, monitor_index: i32) {
+    pub fn set_positioning_mode(&self, mode: WindowPositioningMode, monitor_index: i32) {
         unsafe { xplm_sys::XPLMSetWindowPositioningMode(self.id, mode as _, monitor_index) };
     }
     /// Forces the window to take keyboard focus.
@@ -245,6 +239,24 @@ impl Window {
     /// Returns whether the window is current at the top of the window stack.
     pub fn is_in_front(&self) -> bool {
         unsafe { xplm_sys::XPLMIsWindowInFront(self.id) != 0 }
+    }
+    /// Sets the
+    pub fn set_resizing_limits(&self, min_size: Option<(i32, i32)>, max_size: Option<(i32, i32)>) {
+        let min_size = min_size.unwrap_or((0, 0));
+        let max_size = max_size.unwrap_or((i32::MAX, i32::MAX));
+        unsafe {
+            xplm_sys::XPLMSetWindowResizingLimits(
+                self.id, min_size.0, min_size.1, max_size.0, max_size.1,
+            );
+        }
+    }
+    /// Returns the underlying `XPLMWindowID` from XPLM.
+    ///
+    /// # Safety
+    /// The window will be destroyed when this `Window` struct is dropped, so the caller must
+    /// take care not to use to the returned `XPLMWindowID` pointer afterwards.
+    pub unsafe fn id(&self) -> xplm_sys::XPLMWindowID {
+        self.id
     }
 }
 
