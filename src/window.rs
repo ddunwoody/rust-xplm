@@ -243,7 +243,9 @@ impl Window {
     /// Sets the
     pub fn set_resizing_limits(&self, min_size: Option<(i32, i32)>, max_size: Option<(i32, i32)>) {
         let min_size = min_size.unwrap_or((0, 0));
-        let max_size = max_size.unwrap_or((i32::MAX, i32::MAX));
+        // Can't use i32::MAX here for the maximum, because it makes X-Plane spaz out and
+        // resize the window incorrectly. So we'll use some safe backup value like i16::MAX.
+        let max_size = max_size.unwrap_or((i16::MAX as i32, i16::MAX as i32));
         unsafe {
             xplm_sys::XPLMSetWindowResizingLimits(
                 self.id, min_size.0, min_size.1, max_size.0, max_size.1,
