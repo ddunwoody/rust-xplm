@@ -1,5 +1,5 @@
 use std::ffi::CString;
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::os::raw::*;
 use std::ptr;
 use std::{ffi::NulError, mem};
@@ -81,6 +81,12 @@ impl Deref for WindowRef {
     type Target = Window;
     fn deref(&self) -> &Self::Target {
         self.window.deref()
+    }
+}
+
+impl DerefMut for WindowRef {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.window.deref_mut()
     }
 }
 
