@@ -521,8 +521,8 @@ pub enum Key {
 
 impl Key {
     /// Converts an XPLM virtual key code into a Key
-    fn from_xplm(xplm_key: c_char) -> Option<Self> {
-        match xplm_key as u32 {
+    fn from_xplm(virtual_key: c_char) -> Option<Self> {
+        match virtual_key as u32 {
             xplm_sys::XPLM_VK_BACK => Some(Key::Back),
             xplm_sys::XPLM_VK_TAB => Some(Key::Tab),
             xplm_sys::XPLM_VK_CLEAR => Some(Key::Clear),
@@ -637,6 +637,14 @@ impl Key {
             _ => None,
         }
     }
+
+    /// Converts an XPLM (non-virtual) key code into a Key
+    fn from_xplm_non_virtual(xplm_key: c_char) -> Option<Self> {
+        match xplm_key as u32 {
+            xplm_sys::XPLM_KEY_DECIMAL => Some(Key::Period),
+            _ => None,
+        }
+    }
 }
 
 /// An event associated with a key press
@@ -680,7 +688,11 @@ impl KeyEvent {
         let option_pressed = flags & xplm_sys::xplm_OptionAltFlag as ::xplm_sys::XPLMKeyFlags != 0;
         let key = match Key::from_xplm(virtual_key) {
             Some(key) => key,
-            None => return Err(KeyEventError::InvalidKey(virtual_key)),
+            // some keys (notably period on the main keyboard) don't have virtual keys
+            None => match Key::from_xplm_non_virtual(key) {
+                Some(key) => key,
+                None => return Err(KeyEventError::InvalidKey(virtual_key)),
+            },
         };
 
         Ok(KeyEvent {
